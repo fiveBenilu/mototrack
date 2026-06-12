@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(kill -9 2986006 2987735)",
+      "Bash(pkill -9 -f \"ts-node-dev\")",
+      "Bash(pkill -9 -f vite)",
+      "Bash(pkill -9 -f concurrently)",
+      "Bash(lsof -i:5173 -i:5174 -i:8009)",
+      "Bash(npx tsc *)",
+      "Bash(npx vite *)"
+    ]
+  }
+}
