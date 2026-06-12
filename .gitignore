@@ -1,0 +1,19 @@
+# Secrets — never commit
+deploy/mototrack.env
+.env
+*.env.local
+
+# Dependencies
+node_modules/
+
+# Build output
+client/dist/
+server/dist/
+
+# Runtime data
+server/data/
+server/uploads/
+
+# Logs / OS noise
+*.log
+.DS_Store

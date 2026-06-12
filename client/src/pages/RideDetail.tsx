@@ -49,7 +49,7 @@ export function RideDetail() {
 
       {ride && (
         <div className="flex flex-col gap-4 p-5">
-          <div className="relative h-[45vh] w-full overflow-hidden rounded-2xl" style={{ border: '1px solid var(--color-border)' }}>
+          <div className="relative isolate h-[45vh] w-full overflow-hidden rounded-2xl" style={{ border: '1px solid var(--color-border)' }}>
             {positions.length > 1 ? (
               <MapContainer center={positions[0]} zoom={13} className="h-full w-full" zoomControl={false}>
                 <TileLayer

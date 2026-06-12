@@ -87,6 +87,41 @@ export interface FriendStats {
   points: number;
 }
 
+export interface GroupMember {
+  id: number;
+  username: string;
+  displayName: string;
+  avatarPath: string | null;
+  online: boolean;
+}
+
+export interface GroupSummary {
+  id: number;
+  name: string;
+  ownerId: number;
+  createdAt: number;
+  memberCount: number;
+  lastMessage: { body: string; createdAt: number; displayName: string } | null;
+}
+
+export interface GroupDetail {
+  id: number;
+  name: string;
+  ownerId: number;
+  createdAt: number;
+  members: GroupMember[];
+}
+
+export interface GroupMessage {
+  id: number;
+  groupId: number;
+  userId: number;
+  displayName: string;
+  avatarPath: string | null;
+  body: string;
+  createdAt: number;
+}
+
 export interface Ride {
   id: number;
   startedAt: number;

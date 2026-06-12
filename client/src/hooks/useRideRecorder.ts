@@ -48,6 +48,11 @@ export function useRideRecorder(options: RecorderOptions = {}) {
 
   const watchIdRef = useRef<number | null>(null);
   const lastPositionRef = useRef<GeolocationCoordinates | null>(null);
+  const lastPositionTimeRef = useRef<number>(0);
+  const recordingRef = useRef(false);
+  const currentLeanRef = useRef(0);
+  const maxLeanLeftRef = useRef(0);
+  const maxLeanRightRef = useRef(0);
   const trackRef = useRef<TrackPoint[]>([]);
   const lastSampleRef = useRef(0);
   const accumulatedMsRef = useRef(0);
@@ -126,13 +131,22 @@ export function useRideRecorder(options: RecorderOptions = {}) {
       setRawGamma(event.gamma);
       const offset = calibrationRef.current ?? 0;
       const lean = event.gamma - offset;
+      currentLeanRef.current = lean;
       setCurrentLean(lean);
 
-      // Max-Schräglage nur werten, wenn Fahrzeug eine relevante Geschwindigkeit hat
-      // (verhindert, dass Kippeln im Stand als Schräglage gezählt wird)
-      if (currentSpeedRef.current >= MIN_SPEED_FOR_LEAN_KMH) {
-        if (lean < 0) setMaxLeanLeft((prev) => Math.max(prev, -lean));
-        else setMaxLeanRight((prev) => Math.max(prev, lean));
+      // Max-Schräglage nur während einer laufenden Aufzeichnung und ab einer
+      // relevanten Geschwindigkeit werten (verhindert, dass Kippeln im Stand
+      // oder vor dem Start als Schräglage gezählt wird).
+      if (recordingRef.current && currentSpeedRef.current >= MIN_SPEED_FOR_LEAN_KMH) {
+        if (lean < 0) {
+          if (-lean > maxLeanLeftRef.current) {
+            maxLeanLeftRef.current = -lean;
+            setMaxLeanLeft(-lean);
+          }
+        } else if (lean > maxLeanRightRef.current) {
+          maxLeanRightRef.current = lean;
+          setMaxLeanRight(lean);
+        }
       }
     }
 
@@ -148,10 +162,10 @@ export function useRideRecorder(options: RecorderOptions = {}) {
         (pos) => {
           const { latitude, longitude, speed } = pos.coords;
           const now = Date.now();
-          const speedKmh = speed !== null && speed >= 0 ? msToKmh(speed) : 0;
 
+          let dist = 0;
           if (lastPositionRef.current) {
-            const dist = haversineDistance(
+            dist = haversineDistance(
               lastPositionRef.current.latitude,
               lastPositionRef.current.longitude,
               latitude,
@@ -160,7 +174,17 @@ export function useRideRecorder(options: RecorderOptions = {}) {
             // GPS-Rauschen bei Stillstand filtern
             if (dist > 1) setDistanceM((prev) => prev + dist);
           }
+
+          // Geschwindigkeit bevorzugt vom GPS; viele Geräte/Browser liefern jedoch
+          // kein `speed`-Feld → dann aus Strecke/Zeit der letzten beiden Punkte ableiten.
+          let speedKmh = speed !== null && speed >= 0 ? msToKmh(speed) : 0;
+          if ((speed === null || speed < 0) && lastPositionRef.current) {
+            const dtS = (now - lastPositionTimeRef.current) / 1000;
+            if (dtS > 0 && dtS < 30) speedKmh = msToKmh(dist / dtS);
+          }
+
           lastPositionRef.current = pos.coords;
+          lastPositionTimeRef.current = now;
 
           setCurrentSpeed(speedKmh);
           currentSpeedRef.current = speedKmh;
@@ -170,7 +194,7 @@ export function useRideRecorder(options: RecorderOptions = {}) {
 
           if (now - lastSampleRef.current >= TRACK_SAMPLE_INTERVAL_MS) {
             lastSampleRef.current = now;
-            trackRef.current.push({ ts: now, lat: latitude, lng: longitude, speed: speedKmh, lean: currentLean });
+            trackRef.current.push({ ts: now, lat: latitude, lng: longitude, speed: speedKmh, lean: currentLeanRef.current });
           }
 
           onPositionRef.current?.({ lat: latitude, lng: longitude, speedKmh });
@@ -189,7 +213,7 @@ export function useRideRecorder(options: RecorderOptions = {}) {
         }
       }, 1000);
     }
-  }, [currentLean]);
+  }, []);
 
   const stopWatchers = useCallback(() => {
     if (watchIdRef.current !== null) {
@@ -209,9 +233,13 @@ export function useRideRecorder(options: RecorderOptions = {}) {
     accumulatedMsRef.current = 0;
     lastSampleRef.current = 0;
     lastPositionRef.current = null;
+    lastPositionTimeRef.current = now;
+    recordingRef.current = true;
     trackRef.current = [];
     speedSumRef.current = 0;
     speedSamplesRef.current = 0;
+    maxLeanLeftRef.current = 0;
+    maxLeanRightRef.current = 0;
     setDistanceM(0);
     setDurationS(0);
     setMaxSpeedKmh(0);
@@ -227,12 +255,17 @@ export function useRideRecorder(options: RecorderOptions = {}) {
       accumulatedMsRef.current += Date.now() - segmentStartRef.current;
       segmentStartRef.current = null;
     }
+    recordingRef.current = false;
+    currentSpeedRef.current = 0;
     stopWatchers();
     setStatus('paused');
   }, [stopWatchers]);
 
   const resume = useCallback(() => {
     segmentStartRef.current = Date.now();
+    lastPositionRef.current = null;
+    lastPositionTimeRef.current = Date.now();
+    recordingRef.current = true;
     setStatus('recording');
     startWatchers();
   }, [startWatchers]);
@@ -242,6 +275,7 @@ export function useRideRecorder(options: RecorderOptions = {}) {
       accumulatedMsRef.current += Date.now() - segmentStartRef.current;
       segmentStartRef.current = null;
     }
+    recordingRef.current = false;
     stopWatchers();
     setStatus('finished');
 
@@ -258,15 +292,19 @@ export function useRideRecorder(options: RecorderOptions = {}) {
       distanceM,
       maxSpeedKmh,
       avgSpeedKmh: avgSpeed,
-      maxLeanLeft,
-      maxLeanRight,
+      maxLeanLeft: maxLeanLeftRef.current,
+      maxLeanRight: maxLeanRightRef.current,
       track: trackRef.current,
     };
     setDurationS(finalDurationS);
     return summary;
-  }, [distanceM, maxSpeedKmh, maxLeanLeft, maxLeanRight]);
+  }, [distanceM, maxSpeedKmh]);
 
   const reset = useCallback(() => {
+    recordingRef.current = false;
+    currentSpeedRef.current = 0;
+    maxLeanLeftRef.current = 0;
+    maxLeanRightRef.current = 0;
     setStatus('idle');
     setDistanceM(0);
     setDurationS(0);

@@ -35,31 +35,32 @@ export function LeanIndicator({ lean }: { lean: number }) {
               Ursprungsbild ~108 breit / 148 hoch, hier per translate auf den Pivot (100/178) gesetzt. */}
           <g transform={`rotate(${clamped} ${pivotX} ${pivotY}) translate(${pivotX - 54} ${pivotY - 148})`}>
             {/* --- Motorrad --- */}
+            {/* --- Motorrad (Rückansicht, schlank) --- */}
             <g fill={color} stroke="none">
-              {/* Tank / Motorblock */}
-              <ellipse cx="54" cy="110" rx="40" ry="33" />
-              {/* linke Packtasche */}
-              <rect x="6" y="120" width="20" height="20" rx="5" />
-              {/* rechter Zylinder / Auspuff */}
-              <circle cx="94" cy="130" r="11" />
-              {/* Vorderreifen */}
-              <rect x="43" y="86" width="22" height="62" rx="10" />
+              {/* Hinterreifen – schmal, mittig, Kontaktpunkt unten */}
+              <rect x="49" y="80" width="10" height="68" rx="5" />
+              {/* Heck / Sitzbank – schmale, sich verjüngende Silhouette */}
+              <path d="M47 132 L61 132 L58 96 L50 96 Z" />
+              {/* Auspuff-Endrohre, dezent links & rechts */}
+              <rect x="40" y="120" width="6" height="20" rx="3" />
+              <rect x="62" y="120" width="6" height="20" rx="3" />
             </g>
-            {/* Scheinwerfer (ausgespart) */}
-            <rect x="44" y="90" width="20" height="11" rx="5" fill="var(--color-card)" />
 
             {/* --- Fahrer --- */}
             <g fill={color} stroke={color} strokeLinecap="round" strokeLinejoin="round">
               {/* Arme zu den Lenkergriffen */}
-              <line x1="42" y1="46" x2="14" y2="86" strokeWidth="13" />
-              <line x1="66" y1="46" x2="94" y2="86" strokeWidth="13" />
-              {/* Rumpf: Schultern breit, läuft zum Sitz zusammen */}
-              <path d="M36 36 L72 36 L66 90 L42 90 Z" strokeWidth="1" />
+              <line x1="44" y1="48" x2="26" y2="84" strokeWidth="9" />
+              <line x1="64" y1="48" x2="82" y2="84" strokeWidth="9" />
+              {/* Rumpf: Schultern schmal, läuft zum Sitz zusammen */}
+              <path d="M40 38 L68 38 L62 96 L46 96 Z" strokeWidth="1" />
               {/* Helm */}
-              <rect x="36" y="0" width="36" height="40" rx="17" strokeWidth="1" />
+              <ellipse cx="54" cy="20" rx="16" ry="18" strokeWidth="1" />
             </g>
+            {/* Lenkergriffe */}
+            <circle cx="26" cy="84" r="4" fill={color} />
+            <circle cx="82" cy="84" r="4" fill={color} />
             {/* Helm-Visiernaht */}
-            <line x1="54" y1="4" x2="54" y2="34" stroke="var(--color-card)" strokeWidth="2.5" strokeLinecap="round" />
+            <line x1="54" y1="6" x2="54" y2="36" stroke="var(--color-card)" strokeWidth="2.5" strokeLinecap="round" />
           </g>
         </svg>
       </div>

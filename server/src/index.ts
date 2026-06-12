@@ -11,6 +11,7 @@ import { camerasRouter } from './routes/cameras';
 import { friendsRouter } from './routes/friends';
 import { usersRouter } from './routes/users';
 import { statsRouter } from './routes/stats';
+import { groupsRouter } from './routes/groups';
 import { setupWebSocket } from './ws';
 import './db';
 
@@ -26,6 +27,7 @@ app.use('/api/cameras', camerasRouter);
 app.use('/api/friends', friendsRouter);
 app.use('/api/users', usersRouter);
 app.use('/api/stats', statsRouter);
+app.use('/api/groups', groupsRouter);
 
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 

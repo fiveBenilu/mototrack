@@ -108,3 +108,97 @@ body {
 .toast-in {
   animation: toast-in 0.3s ease-out;
 }
+
+/* --- Forza-inspirierte Karte ------------------------------------------- */
+
+/* Eigener Standort: Heading-Pfeil mit pulsierendem Glow */
+@keyframes self-pulse {
+  0% { transform: scale(1); opacity: 0.55; }
+  70% { transform: scale(2.4); opacity: 0; }
+  100% { transform: scale(2.4); opacity: 0; }
+}
+.self-marker {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+.self-marker__pulse {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: var(--color-accent);
+  animation: self-pulse 2.4s ease-out infinite;
+}
+.self-marker__arrow {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  filter: drop-shadow(0 0 6px rgba(10, 132, 255, 0.9));
+  transition: transform 0.3s linear;
+}
+
+/* Blitzer-Marker mit leuchtendem Ring */
+@keyframes cam-glow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 59, 48, 0.55), 0 2px 6px rgba(0,0,0,0.35); }
+  50% { box-shadow: 0 0 0 7px rgba(255, 59, 48, 0), 0 2px 6px rgba(0,0,0,0.35); }
+}
+.cam-marker {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: #ff3b30;
+  border: 2px solid white;
+  animation: cam-glow 2s ease-in-out infinite;
+}
+
+/* Freund-Marker: Avatar/Initiale im blauen Ring */
+.friend-marker {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  overflow: hidden;
+  background: var(--color-accent);
+  border: 2px solid #fff;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+}
+
+/* Karten-HUD im Forza-Stil */
+.map-hud {
+  position: absolute;
+  left: 1rem;
+  bottom: 1rem;
+  z-index: 1000;
+  display: flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  padding: 0.5rem 0.9rem;
+  border-radius: 16px;
+  background: var(--color-card);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--color-border);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+}
+
+/* Leaflet-Popups an das App-Theme angleichen */
+.leaflet-popup-content-wrapper,
+.leaflet-popup-tip {
+  background: var(--color-bg-elevated);
+  color: var(--color-text);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+}
+.leaflet-popup-content-wrapper {
+  border-radius: 16px;
+  border: 1px solid var(--color-border);
+}
+.leaflet-container a.leaflet-popup-close-button {
+  color: var(--color-text-secondary);
+}

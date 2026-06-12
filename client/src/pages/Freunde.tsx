@@ -69,6 +69,20 @@ export function Freunde() {
     <div className="pb-24">
       <PageHeader title="Freunde" subtitle="Verbinde dich mit anderen Fahrer:innen" />
       <div className="flex flex-col gap-4 p-5">
+        <Link
+          to="/gruppen"
+          className="ios-card flex items-center gap-3 p-4 transition active:scale-[0.99]"
+        >
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-(--color-accent-2) text-white">
+            <Icon name="users" size={22} />
+          </div>
+          <div className="flex-1">
+            <p className="font-semibold">Gruppen</p>
+            <p className="text-xs text-(--color-text-secondary)">Gemeinsame Ausfahrten & Gruppenchat</p>
+          </div>
+          <Icon name="chevron-right" size={18} className="text-(--color-text-secondary)" />
+        </Link>
+
         <section className="ios-card p-4">
           <h2 className="mb-2 text-base font-semibold">Dein Freunde-Code</h2>
           <p className="rounded-xl bg-(--color-bg) px-4 py-3 text-center text-lg font-mono font-bold tracking-widest">

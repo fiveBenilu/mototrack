@@ -13,6 +13,8 @@ import { RideDetail } from './pages/RideDetail';
 import { Einstellungen } from './pages/Einstellungen';
 import { Freunde } from './pages/Freunde';
 import { FriendProfile } from './pages/FriendProfile';
+import { Groups } from './pages/Groups';
+import { GroupDetail } from './pages/GroupDetail';
 
 function AppShell() {
   const { user, loading } = useAuth();
@@ -51,6 +53,8 @@ function AppShell() {
           <Route path="/einstellungen" element={<Einstellungen />} />
           <Route path="/freunde" element={<Freunde />} />
           <Route path="/freunde/:id" element={<FriendProfile />} />
+          <Route path="/gruppen" element={<Groups />} />
+          <Route path="/gruppen/:id" element={<GroupDetail />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </div>

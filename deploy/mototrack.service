@@ -1,0 +1,24 @@
+[Unit]
+Description=MotoTrack server (API + client)
+After=network.target
+
+[Service]
+Type=simple
+User=bennetgriese
+WorkingDirectory=/home/bennetgriese/mototrack
+EnvironmentFile=/etc/mototrack.env
+Environment=NODE_ENV=production
+Environment=PORT=8009
+
+# Quellcode bei jedem (Re-)Start frisch bauen, damit `systemctl restart`
+# alle Änderungen an Client und Server übernimmt.
+ExecStartPre=/usr/bin/npm run build
+ExecStart=/usr/bin/node server/dist/index.js
+
+# Build kann ein paar Sekunden dauern – großzügiges Start-Timeout.
+TimeoutStartSec=180
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

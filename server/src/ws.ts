@@ -116,3 +116,12 @@ export function setupWebSocket(server: Server) {
 export function isUserOnline(userId: number): boolean {
   return connections.has(userId);
 }
+
+/** Sendet eine Nachricht an alle offenen Sockets der angegebenen Nutzer. */
+export function broadcastToUsers(userIds: number[], data: unknown) {
+  for (const userId of userIds) {
+    const sockets = connections.get(userId);
+    if (!sockets) continue;
+    for (const ws of sockets) send(ws, data);
+  }
+}
