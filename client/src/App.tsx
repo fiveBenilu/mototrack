@@ -16,10 +16,21 @@ import { Freunde } from './pages/Freunde';
 import { FriendProfile } from './pages/FriendProfile';
 import { Groups } from './pages/Groups';
 import { GroupDetail } from './pages/GroupDetail';
+import { PublicRide } from './pages/PublicRide';
 
 function AppShell() {
   const { user, loading } = useAuth();
   const location = useLocation();
+
+  // Öffentlich geteilte Fahrten sind ohne Anmeldung erreichbar – vor dem
+  // Auth-Gate behandeln, damit auch ausgeloggte Besucher sie sehen.
+  if (location.pathname.startsWith('/r/')) {
+    return (
+      <Routes>
+        <Route path="/r/:token" element={<PublicRide />} />
+      </Routes>
+    );
+  }
 
   if (loading) {
     return (

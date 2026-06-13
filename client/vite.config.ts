@@ -8,8 +8,19 @@ export default defineConfig({
     react(),
     tailwindcss(),
     VitePWA({
-      registerType: 'prompt',
+      strategies: 'injectManifest',
+      srcDir: 'src',
+      filename: 'sw.ts',
+      // autoUpdate + skipWaiting/clients.claim im SW: neue Versionen aktivieren
+      // sich selbst und laden die Seite neu, statt auf eine Nutzeraktion zu warten.
+      registerType: 'autoUpdate',
+      // Registrierung erfolgt explizit in main.tsx (registerSW) – darum hier aus.
+      injectRegister: false,
       includeAssets: ['favicon.svg'],
+      injectManifest: {
+        // Precache auch die größeren JS-Bundles (Leaflet etc.).
+        maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
+      },
       manifest: {
         name: 'MotoTrack',
         short_name: 'MotoTrack',

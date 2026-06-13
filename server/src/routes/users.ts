@@ -1,10 +1,12 @@
 import { Router } from 'express';
 import path from 'path';
 import fs from 'fs';
+import crypto from 'crypto';
 import multer from 'multer';
 import bcrypt from 'bcryptjs';
 import { db } from '../db';
 import { requireAuth, AuthedRequest } from '../middleware/auth';
+import { authLimiter } from '../middleware/rateLimit';
 import { publicUser } from './auth';
 
 export const usersRouter = Router();
@@ -12,24 +14,34 @@ export const usersRouter = Router();
 const uploadsDir = path.join(__dirname, '../../uploads/avatars');
 fs.mkdirSync(uploadsDir, { recursive: true });
 
-const storage = multer.diskStorage({
-  destination: (_req, _file, cb) => cb(null, uploadsDir),
-  filename: (req: AuthedRequest, file, cb) => {
-    const ext = path.extname(file.originalname).toLowerCase().replace(/[^a-z0-9.]/g, '') || '.jpg';
-    cb(null, `${req.userId}-${Date.now()}${ext}`);
-  },
+// Avatare werden zunächst im Speicher entgegengenommen und erst nach Prüfung
+// der echten Dateisignatur (Magic Bytes) auf die Platte geschrieben. Der vom
+// Client gesendete `mimetype` und der Originaldateiname sind manipulierbar und
+// dürfen NICHT darüber entscheiden, welche Endung die Datei bekommt – sonst
+// ließe sich z. B. eine SVG/HTML-Datei als Bild hochladen und würde beim Abruf
+// über /uploads als Skript im Origin der App ausgeführt (Stored XSS).
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 4 * 1024 * 1024 },
 });
 
-const upload = multer({
-  storage,
-  limits: { fileSize: 4 * 1024 * 1024 },
-  fileFilter: (_req, file, cb) => {
-    if (!/^image\/(jpeg|png|webp|gif)$/.test(file.mimetype)) {
-      return cb(new Error('Nur Bilddateien erlaubt'));
-    }
-    cb(null, true);
-  },
-});
+// Erkennt das Bildformat anhand der Magic Bytes und liefert die passende
+// Dateiendung – oder null, wenn es kein unterstütztes Rasterbild ist.
+function detectImageExt(buf: Buffer): string | null {
+  if (buf.length >= 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return '.jpg';
+  if (
+    buf.length >= 8 &&
+    buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47 &&
+    buf[4] === 0x0d && buf[5] === 0x0a && buf[6] === 0x1a && buf[7] === 0x0a
+  ) return '.png';
+  if (buf.length >= 6 && buf.toString('ascii', 0, 6).match(/^GIF8[79]a$/)) return '.gif';
+  if (
+    buf.length >= 12 &&
+    buf.toString('ascii', 0, 4) === 'RIFF' &&
+    buf.toString('ascii', 8, 12) === 'WEBP'
+  ) return '.webp';
+  return null;
+}
 
 usersRouter.put('/me', requireAuth, (req: AuthedRequest, res) => {
   const { displayName, themePref } = req.body || {};
@@ -62,7 +74,7 @@ usersRouter.put('/me', requireAuth, (req: AuthedRequest, res) => {
   res.json({ user: publicUser(user) });
 });
 
-usersRouter.put('/me/password', requireAuth, (req: AuthedRequest, res) => {
+usersRouter.put('/me/password', authLimiter, requireAuth, (req: AuthedRequest, res) => {
   const { currentPassword, newPassword } = req.body || {};
   if (typeof currentPassword !== 'string' || typeof newPassword !== 'string') {
     return res.status(400).json({ error: 'Aktuelles und neues Passwort erforderlich' });
@@ -82,13 +94,23 @@ usersRouter.put('/me/password', requireAuth, (req: AuthedRequest, res) => {
 usersRouter.post('/me/avatar', requireAuth, upload.single('avatar'), (req: AuthedRequest, res) => {
   if (!req.file) return res.status(400).json({ error: 'Keine Datei erhalten' });
 
+  const ext = detectImageExt(req.file.buffer);
+  if (!ext) return res.status(400).json({ error: 'Nur Bilddateien erlaubt (JPEG, PNG, WebP, GIF)' });
+
+  // Serverseitig generierter Dateiname; weder Originalname noch Endung des
+  // Clients fließen ein. Zufallsanteil verhindert Erraten/Überschreiben.
+  const filename = `${req.userId}-${Date.now()}-${crypto.randomBytes(6).toString('hex')}${ext}`;
+  fs.writeFileSync(path.join(uploadsDir, filename), req.file.buffer);
+
   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.userId) as any;
   if (user.avatar_path) {
-    const oldPath = path.join(__dirname, '../..', user.avatar_path);
+    // Nur Dateien innerhalb des Avatar-Verzeichnisses löschen (Schutz vor
+    // manipulierten Pfaden in der DB), den Basename verwenden.
+    const oldPath = path.join(uploadsDir, path.basename(user.avatar_path));
     fs.unlink(oldPath, () => {});
   }
 
-  const avatarPath = `/uploads/avatars/${req.file.filename}`;
+  const avatarPath = `/uploads/avatars/${filename}`;
   db.prepare('UPDATE users SET avatar_path = ? WHERE id = ?').run(avatarPath, req.userId);
 
   const updated = db.prepare('SELECT * FROM users WHERE id = ?').get(req.userId);

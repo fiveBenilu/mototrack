@@ -1,39 +1,69 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { MapContainer, TileLayer, Polyline, useMap } from 'react-leaflet';
-import 'leaflet/dist/leaflet.css';
 import { PageHeader } from '../components/PageHeader';
-import { useTheme } from '../context/ThemeContext';
-import { api } from '../lib/api';
-import { formatDistance, formatDuration, buildSpeedSegments, SPEED_COLOR_STOPS } from '../lib/geo';
+import { Icon } from '../components/Icon';
+import { RideTrackMap, RideStatCard } from '../components/RideTrackMap';
+import { api, ApiError } from '../lib/api';
+import { formatDistance, formatDuration } from '../lib/geo';
+import { downloadRideGpx } from '../lib/gpx';
 import type { Ride } from '../lib/types';
-
-function FitBounds({ positions }: { positions: [number, number][] }) {
-  const map = useMap();
-  useEffect(() => {
-    if (positions.length > 0) {
-      map.fitBounds(positions, { padding: [24, 24] });
-    }
-  }, [positions, map]);
-  return null;
-}
 
 export function RideDetail() {
   const { id } = useParams();
-  const { resolved } = useTheme();
   const [ride, setRide] = useState<Ride | null>(null);
   const [error, setError] = useState(false);
+  const [shareToken, setShareToken] = useState<string | null>(null);
+  const [shareBusy, setShareBusy] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     api
       .get<{ ride: Ride }>(`/rides/${id}`)
-      .then((data) => setRide(data.ride))
+      .then((data) => {
+        setRide(data.ride);
+        setShareToken(data.ride.shareToken);
+      })
       .catch(() => setError(true));
   }, [id]);
 
+  const shareUrl = shareToken ? `${window.location.origin}/r/${shareToken}` : null;
+
+  async function handleShare() {
+    setShareBusy(true);
+    try {
+      let url = shareUrl;
+      if (!url) {
+        const { shareToken: token } = await api.post<{ shareToken: string }>(`/rides/${id}/share`);
+        setShareToken(token);
+        url = `${window.location.origin}/r/${token}`;
+      }
+      // Web Share API (mobil) bevorzugen, sonst in die Zwischenablage kopieren.
+      if (navigator.share) {
+        await navigator.share({ title: 'MotoTrack-Fahrt', url });
+      } else {
+        await navigator.clipboard.writeText(url);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      }
+    } catch (e) {
+      // Abbruch des Share-Dialogs ist kein Fehler.
+      if (e instanceof ApiError) setError(true);
+    } finally {
+      setShareBusy(false);
+    }
+  }
+
+  async function handleUnshare() {
+    setShareBusy(true);
+    try {
+      await api.del(`/rides/${id}/share`);
+      setShareToken(null);
+    } finally {
+      setShareBusy(false);
+    }
+  }
+
   const track = ride?.track ?? [];
-  const positions = track.map((p) => [p.lat, p.lng] as [number, number]);
-  const segments = buildSpeedSegments(track);
 
   return (
     <div className="pb-24">
@@ -43,69 +73,55 @@ export function RideDetail() {
         backTo="/statistik"
       />
 
-      {error && (
-        <p className="p-5 text-sm text-(--color-text-secondary)">Fahrt konnte nicht geladen werden.</p>
-      )}
+      {error && <p className="p-5 text-sm text-(--color-text-secondary)">Fahrt konnte nicht geladen werden.</p>}
 
       {ride && (
         <div className="flex flex-col gap-4 p-5">
-          <div className="relative isolate h-[45vh] w-full overflow-hidden rounded-2xl" style={{ border: '1px solid var(--color-border)' }}>
-            {positions.length > 1 ? (
-              <MapContainer center={positions[0]} zoom={13} className="h-full w-full" zoomControl={false}>
-                <TileLayer
-                  key={resolved}
-                  attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
-                  url={
-                    resolved === 'dark'
-                      ? 'https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png'
-                      : 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}{r}.png'
-                  }
-                  subdomains="abcd"
-                  maxZoom={20}
-                />
-                <FitBounds positions={positions} />
-                {segments.map((seg, i) => (
-                  <Polyline key={i} positions={seg.positions} pathOptions={{ color: seg.color, weight: 4, lineCap: 'round', lineJoin: 'round' }} />
-                ))}
-              </MapContainer>
-            ) : (
-              <div className="flex h-full items-center justify-center text-sm text-(--color-text-secondary)">
-                Keine Routendaten für diese Fahrt vorhanden.
-              </div>
-            )}
-          </div>
-
-          {segments.length > 0 && (
-            <section className="ios-card flex flex-wrap items-center gap-3 p-4">
-              <span className="text-sm font-semibold">Geschwindigkeit</span>
-              {SPEED_COLOR_STOPS.map((s) => (
-                <span key={s.label} className="flex items-center gap-1.5 text-xs text-(--color-text-secondary)">
-                  <span className="h-2.5 w-2.5 rounded-full" style={{ background: s.color }} />
-                  {s.label} km/h
-                </span>
-              ))}
-            </section>
-          )}
+          <RideTrackMap track={track} />
 
           <div className="grid grid-cols-2 gap-3">
-            <StatCard label="Distanz" value={formatDistance(ride.distanceM)} />
-            <StatCard label="Dauer" value={formatDuration(ride.durationS)} />
-            <StatCard label="Max. Speed" value={`${ride.maxSpeedKmh.toFixed(0)} km/h`} />
-            <StatCard label="Ø Speed" value={`${ride.avgSpeedKmh.toFixed(0)} km/h`} />
-            <StatCard label="Schräglage links" value={`${ride.maxLeanLeft.toFixed(0)}°`} />
-            <StatCard label="Schräglage rechts" value={`${ride.maxLeanRight.toFixed(0)}°`} />
+            <RideStatCard label="Distanz" value={formatDistance(ride.distanceM)} />
+            <RideStatCard label="Dauer" value={formatDuration(ride.durationS)} />
+            <RideStatCard label="Max. Speed" value={`${ride.maxSpeedKmh.toFixed(0)} km/h`} />
+            <RideStatCard label="Ø Speed" value={`${ride.avgSpeedKmh.toFixed(0)} km/h`} />
+            <RideStatCard label="Schräglage links" value={`${ride.maxLeanLeft.toFixed(0)}°`} />
+            <RideStatCard label="Schräglage rechts" value={`${ride.maxLeanRight.toFixed(0)}°`} />
+          </div>
+
+          <div className="flex flex-col gap-3">
+            <button
+              onClick={handleShare}
+              disabled={shareBusy}
+              className="flex items-center justify-center gap-2 rounded-xl bg-(--color-accent) py-3 text-base font-semibold text-white transition active:scale-[0.98] disabled:opacity-50"
+            >
+              <Icon name="share" size={18} /> {copied ? 'Link kopiert!' : shareToken ? 'Link teilen' : 'Öffentlich teilen'}
+            </button>
+
+            {shareToken && (
+              <div className="ios-card flex flex-col gap-2 p-3">
+                <p className="text-xs text-(--color-text-secondary)">Öffentlicher Link aktiv – jeder mit dem Link kann diese Fahrt sehen:</p>
+                <code className="block overflow-x-auto whitespace-nowrap rounded-lg bg-(--color-bg) px-3 py-2 text-xs">{shareUrl}</code>
+                <button
+                  onClick={handleUnshare}
+                  disabled={shareBusy}
+                  className="self-start text-xs font-medium text-(--color-danger) disabled:opacity-50"
+                >
+                  Link deaktivieren
+                </button>
+              </div>
+            )}
+
+            {track.length > 0 && (
+              <button
+                onClick={() => downloadRideGpx(ride)}
+                className="flex items-center justify-center gap-2 rounded-xl border border-(--color-border) bg-(--color-bg-elevated) py-3 text-base font-semibold transition active:scale-[0.98]"
+              >
+                <Icon name="download" size={18} /> Als GPX exportieren
+              </button>
+            )}
           </div>
         </div>
       )}
-    </div>
-  );
-}
-
-function StatCard({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="ios-card flex flex-col items-center justify-center gap-1 p-4 text-center">
-      <span className="text-xl font-bold tabular-nums">{value}</span>
-      <span className="text-xs text-(--color-text-secondary)">{label}</span>
     </div>
   );
 }

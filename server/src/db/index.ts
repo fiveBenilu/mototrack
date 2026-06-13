@@ -22,3 +22,15 @@ if (camCols.some((c) => c.name === 'speed_limit_kmh' || c.name === 'tile_x')) {
 
 const schema = fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf-8');
 db.exec(schema);
+
+// Migration: share_token-Spalte zu bestehenden rides-Tabellen ergänzen
+// (Schema oben legt sie nur bei einer frisch erstellten Tabelle an).
+const rideCols = db.prepare(`PRAGMA table_info(rides)`).all() as { name: string }[];
+if (!rideCols.some((c) => c.name === 'share_token')) {
+  db.exec('ALTER TABLE rides ADD COLUMN share_token TEXT');
+}
+// Erst jetzt anlegen – Spalte existiert hier sowohl bei frischer als auch bei
+// migrierter DB. IF NOT EXISTS macht den Aufruf idempotent.
+db.exec(
+  'CREATE UNIQUE INDEX IF NOT EXISTS idx_rides_share_token ON rides(share_token) WHERE share_token IS NOT NULL',
+);

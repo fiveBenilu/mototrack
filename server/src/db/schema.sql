@@ -31,8 +31,11 @@ CREATE TABLE IF NOT EXISTS rides (
   max_lean_right REAL NOT NULL DEFAULT 0,
   points INTEGER NOT NULL DEFAULT 0,
   track_data TEXT, -- JSON array of {ts, lat, lng, speed, lean}
+  share_token TEXT, -- gesetzt = Fahrt ist über einen öffentlichen Link einsehbar
   created_at INTEGER NOT NULL DEFAULT (unixepoch())
 );
+-- Index auf share_token wird in db/index.ts NACH der Spalten-Migration angelegt
+-- (auf Bestands-DBs existiert die Spalte hier noch nicht).
 
 CREATE TABLE IF NOT EXISTS speed_cameras (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -83,6 +86,17 @@ CREATE TABLE IF NOT EXISTS group_messages (
   body TEXT NOT NULL,
   created_at INTEGER NOT NULL DEFAULT (unixepoch())
 );
+
+-- Web-Push-Abonnements (ein Nutzer kann mehrere Geräte/Browser haben).
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+  endpoint TEXT PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  p256dh TEXT NOT NULL,
+  auth TEXT NOT NULL,
+  created_at INTEGER NOT NULL DEFAULT (unixepoch())
+);
+
+CREATE INDEX IF NOT EXISTS idx_push_subscriptions_user ON push_subscriptions(user_id);
 
 CREATE INDEX IF NOT EXISTS idx_group_members_user ON group_members(user_id);
 CREATE INDEX IF NOT EXISTS idx_group_messages_group ON group_messages(group_id, id);

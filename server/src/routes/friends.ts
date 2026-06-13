@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { db } from '../db';
 import { requireAuth, AuthedRequest } from '../middleware/auth';
 import { isUserOnline } from '../ws';
+import { sendPushToUser } from '../push';
 import { aggregateTotals, mapHistory, topCorners } from '../lib/corners';
 
 export const friendsRouter = Router();
@@ -74,6 +75,15 @@ friendsRouter.post('/request', requireAuth, (req: AuthedRequest, res) => {
   }
 
   db.prepare('INSERT INTO friendships (user_id, friend_id, status) VALUES (?, ?, ?)').run(req.userId, target.id, 'pending');
+
+  const sender = db.prepare('SELECT display_name FROM users WHERE id = ?').get(req.userId) as any;
+  void sendPushToUser(target.id, {
+    title: 'Neue Freundschaftsanfrage',
+    body: `${sender?.display_name ?? 'Jemand'} möchte sich mit dir verbinden`,
+    url: '/freunde',
+    tag: 'friend-request',
+  });
+
   res.status(201).json({ ok: true });
 });
 

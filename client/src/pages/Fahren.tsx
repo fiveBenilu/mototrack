@@ -6,14 +6,50 @@ import { type RideSummary } from '../hooks/useRideRecorder';
 import { useRide } from '../context/RideContext';
 import { formatDistance, formatDuration } from '../lib/geo';
 import { savePending, uploadRide } from '../lib/pendingRides';
+import { loadDraft, clearDraft, type RideDraft } from '../lib/rideDraft';
 
 export function Fahren() {
   const recorder = useRide();
   const [savedSummary, setSavedSummary] = useState<RideSummary | null>(null);
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [draft, setDraft] = useState<RideDraft | null>(null);
+  const [draftState, setDraftState] = useState<'prompt' | 'saving' | 'saved' | 'error'>('prompt');
 
   const permissionsGranted = recorder.motionPermission === 'granted' && recorder.geoPermission !== 'denied';
   const isCalibrated = recorder.calibrationOffset !== null;
+
+  // Beim Öffnen prüfen, ob eine frühere Aufzeichnung abgebrochen wurde (Absturz,
+  // Akku leer, Seite neu geladen). Nur anbieten, wenn gerade nicht aufgezeichnet
+  // wird und tatsächlich Streckendaten vorliegen.
+  useEffect(() => {
+    if (recorder.status !== 'idle') return;
+    let cancelled = false;
+    loadDraft().then((d) => {
+      if (!cancelled && d && d.track.length > 0) setDraft(d);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [recorder.status]);
+
+  async function handleRecoverDraft() {
+    if (!draft) return;
+    const { updatedAt: _updatedAt, ...summary } = draft;
+    savePending(summary);
+    setDraftState('saving');
+    try {
+      await uploadRide(summary);
+      setDraftState('saved');
+    } catch {
+      setDraftState('error'); // bleibt in der Pending-Queue und wird später erneut versucht
+    }
+    await clearDraft();
+  }
+
+  async function handleDiscardDraft() {
+    await clearDraft();
+    setDraft(null);
+  }
 
   useEffect(() => {
     if (savedSummary && saveState === 'saving') {
@@ -143,6 +179,47 @@ export function Fahren() {
     <div className="pb-24">
       <PageHeader title="Fahren" subtitle="Sensoren aktivieren, kalibrieren, los geht's" />
       <div className="flex flex-col gap-4 p-5">
+        {draft && (
+          <section className="ios-card border border-(--color-accent) p-4">
+            <h2 className="mb-1 flex items-center gap-1.5 text-base font-semibold">
+              <Icon name="alert" size={18} className="text-(--color-accent)" /> Unterbrochene Fahrt
+            </h2>
+            <p className="mb-3 text-sm text-(--color-text-secondary)">
+              Eine nicht beendete Aufzeichnung wurde gefunden:{' '}
+              <span className="font-medium text-(--color-text)">
+                {formatDistance(draft.distanceM)} · {formatDuration(draft.durationS)}
+              </span>{' '}
+              vom {new Date(draft.startedAt).toLocaleString('de-DE', { dateStyle: 'medium', timeStyle: 'short' })}.
+            </p>
+            {draftState === 'saved' ? (
+              <span className="flex items-center gap-1.5 text-sm text-(--color-success)">
+                <Icon name="check" size={16} /> Fahrt wiederhergestellt und gespeichert
+              </span>
+            ) : draftState === 'error' ? (
+              <span className="flex items-center gap-1.5 text-sm text-(--color-danger)">
+                <Icon name="alert" size={16} /> Konnte nicht hochgeladen werden – lokal gesichert, Upload folgt später
+              </span>
+            ) : (
+              <div className="flex gap-3">
+                <button
+                  onClick={handleRecoverDraft}
+                  disabled={draftState === 'saving'}
+                  className="flex-1 rounded-xl bg-(--color-accent) py-2.5 text-sm font-semibold text-white transition active:scale-[0.98] disabled:opacity-50"
+                >
+                  {draftState === 'saving' ? 'Wird gespeichert…' : 'Wiederherstellen'}
+                </button>
+                <button
+                  onClick={handleDiscardDraft}
+                  disabled={draftState === 'saving'}
+                  className="rounded-xl border border-(--color-border) px-4 py-2.5 text-sm font-medium transition active:scale-[0.98] disabled:opacity-50"
+                >
+                  Verwerfen
+                </button>
+              </div>
+            )}
+          </section>
+        )}
+
         <section className="ios-card p-4">
           <h2 className="mb-1 text-base font-semibold">1. Sensoren aktivieren</h2>
           <p className="mb-3 text-sm text-(--color-text-secondary)">

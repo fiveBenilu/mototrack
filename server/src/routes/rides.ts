@@ -1,8 +1,10 @@
 import { Router } from 'express';
+import crypto from 'crypto';
 import { db } from '../db';
 import { requireAuth, AuthedRequest } from '../middleware/auth';
 
 export const ridesRouter = Router();
+export const publicRidesRouter = Router();
 
 interface TrackPoint {
   ts: number;
@@ -24,6 +26,24 @@ function publicRide(r: any) {
     maxLeanLeft: r.max_lean_left,
     maxLeanRight: r.max_lean_right,
     points: r.points,
+    shareToken: r.share_token ?? null,
+    track: r.track_data ? JSON.parse(r.track_data) : [],
+  };
+}
+
+// Read-only-Ansicht für den öffentlichen Link: keine internen IDs/Tokens, dafür
+// der Anzeigename des Fahrers für die geteilte Seite.
+function sharedRide(r: any) {
+  return {
+    startedAt: r.started_at,
+    endedAt: r.ended_at,
+    durationS: r.duration_s,
+    distanceM: r.distance_m,
+    maxSpeedKmh: r.max_speed_kmh,
+    avgSpeedKmh: r.avg_speed_kmh,
+    maxLeanLeft: r.max_lean_left,
+    maxLeanRight: r.max_lean_right,
+    riderName: r.display_name,
     track: r.track_data ? JSON.parse(r.track_data) : [],
   };
 }
@@ -97,4 +117,37 @@ ridesRouter.get('/:id', requireAuth, (req: AuthedRequest, res) => {
   const ride = db.prepare('SELECT * FROM rides WHERE id = ? AND user_id = ?').get(req.params.id, req.userId);
   if (!ride) return res.status(404).json({ error: 'Fahrt nicht gefunden' });
   res.json({ ride: publicRide(ride) });
+});
+
+// Öffentlichen Link aktivieren (idempotent): erzeugt einmalig ein Token und gibt es zurück.
+ridesRouter.post('/:id/share', requireAuth, (req: AuthedRequest, res) => {
+  const ride = db.prepare('SELECT * FROM rides WHERE id = ? AND user_id = ?').get(req.params.id, req.userId) as any;
+  if (!ride) return res.status(404).json({ error: 'Fahrt nicht gefunden' });
+
+  let token: string = ride.share_token;
+  if (!token) {
+    token = crypto.randomBytes(12).toString('base64url');
+    db.prepare('UPDATE rides SET share_token = ? WHERE id = ?').run(token, ride.id);
+  }
+  res.json({ shareToken: token });
+});
+
+// Öffentlichen Link widerrufen.
+ridesRouter.delete('/:id/share', requireAuth, (req: AuthedRequest, res) => {
+  const ride = db.prepare('SELECT * FROM rides WHERE id = ? AND user_id = ?').get(req.params.id, req.userId) as any;
+  if (!ride) return res.status(404).json({ error: 'Fahrt nicht gefunden' });
+  db.prepare('UPDATE rides SET share_token = NULL WHERE id = ?').run(ride.id);
+  res.json({ ok: true });
+});
+
+// Öffentlicher Abruf einer geteilten Fahrt – ohne Anmeldung, nur per Token.
+publicRidesRouter.get('/rides/:token', (req, res) => {
+  const ride = db
+    .prepare(
+      `SELECT r.*, u.display_name FROM rides r JOIN users u ON u.id = r.user_id
+       WHERE r.share_token = ?`,
+    )
+    .get(req.params.token);
+  if (!ride) return res.status(404).json({ error: 'Fahrt nicht gefunden' });
+  res.json({ ride: sharedRide(ride) });
 });

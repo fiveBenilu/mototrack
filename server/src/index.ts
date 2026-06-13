@@ -6,12 +6,13 @@ import fs from 'fs';
 import http from 'http';
 import { config } from './config';
 import { authRouter } from './routes/auth';
-import { ridesRouter } from './routes/rides';
+import { ridesRouter, publicRidesRouter } from './routes/rides';
 import { camerasRouter } from './routes/cameras';
 import { friendsRouter } from './routes/friends';
 import { usersRouter } from './routes/users';
 import { statsRouter } from './routes/stats';
 import { groupsRouter } from './routes/groups';
+import { pushRouter } from './routes/push';
 import { setupWebSocket } from './ws';
 import './db';
 
@@ -26,14 +27,28 @@ app.use(express.json({ limit: '5mb' }));
 app.use(cookieParser());
 
 app.use('/api/auth', authRouter);
+app.use('/api/public', publicRidesRouter);
 app.use('/api/rides', ridesRouter);
 app.use('/api/cameras', camerasRouter);
 app.use('/api/friends', friendsRouter);
 app.use('/api/users', usersRouter);
 app.use('/api/stats', statsRouter);
 app.use('/api/groups', groupsRouter);
+app.use('/api/push', pushRouter);
 
-app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
+// Hochgeladene Dateien (Avatare) als statische Inhalte ausliefern. Zusätzlich
+// härten: `nosniff` verhindert MIME-Sniffing und der Verzicht auf inline-HTML/SVG
+// schützt davor, dass eine hochgeladene Datei als aktives Dokument im Origin
+// der App ausgeführt wird (Stored XSS).
+app.use(
+  '/uploads',
+  express.static(path.join(__dirname, '../uploads'), {
+    setHeaders: (res) => {
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.setHeader('Content-Security-Policy', "default-src 'none'; sandbox");
+    },
+  }),
+);
 
 const clientDist = path.join(__dirname, '../../client/dist');
 if (fs.existsSync(clientDist)) {

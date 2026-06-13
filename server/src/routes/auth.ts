@@ -2,6 +2,7 @@ import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import { db } from '../db';
 import { signToken, requireAuth, AuthedRequest } from '../middleware/auth';
+import { authLimiter } from '../middleware/rateLimit';
 import { config } from '../config';
 
 export const authRouter = Router();
@@ -36,7 +37,7 @@ export function publicUser(u: any) {
   };
 }
 
-authRouter.post('/register', (req, res) => {
+authRouter.post('/register', authLimiter, (req, res) => {
   const { username, password, displayName } = req.body || {};
   if (typeof username !== 'string' || typeof password !== 'string') {
     return res.status(400).json({ error: 'Benutzername und Passwort erforderlich' });
@@ -65,7 +66,7 @@ authRouter.post('/register', (req, res) => {
   res.status(201).json({ user: publicUser(user) });
 });
 
-authRouter.post('/login', (req, res) => {
+authRouter.post('/login', authLimiter, (req, res) => {
   const { username, password } = req.body || {};
   if (typeof username !== 'string' || typeof password !== 'string') {
     return res.status(400).json({ error: 'Benutzername und Passwort erforderlich' });

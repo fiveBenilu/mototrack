@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { haversineDistance, msToKmh } from '../lib/geo';
+import { saveDraft, clearDraft } from '../lib/rideDraft';
 
 export type RecorderStatus = 'idle' | 'recording' | 'paused' | 'finished';
 export type PermissionState = 'unknown' | 'granted' | 'denied' | 'unsupported';
@@ -60,10 +61,13 @@ export function useRideRecorder(options: RecorderOptions = {}) {
   const startedAtRef = useRef<number | null>(null);
   const speedSumRef = useRef(0);
   const speedSamplesRef = useRef(0);
+  const distanceRef = useRef(0);
+  const maxSpeedRef = useRef(0);
   const calibrationRef = useRef<number | null>(null);
   const currentSpeedRef = useRef(0);
   const tickIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const onPositionRef = useRef<RecorderOptions['onPosition']>(undefined);
+  const wakeLockRef = useRef<WakeLockSentinel | null>(null);
 
   useEffect(() => {
     calibrationRef.current = calibrationOffset;
@@ -154,9 +158,69 @@ export function useRideRecorder(options: RecorderOptions = {}) {
     return () => window.removeEventListener('deviceorientation', onOrientation);
   }, []);
 
+  // --- Wake Lock -------------------------------------------------------------
+  // Bildschirm während der Aufzeichnung anlassen, damit GPS/Sensoren nicht durch
+  // den Standby unterbrochen werden. Das System gibt den Lock beim Wegschalten
+  // (Tab im Hintergrund) frei – darum bei Rückkehr neu anfordern, solange läuft.
+
+  const acquireWakeLock = useCallback(async () => {
+    const wl = (navigator as any).wakeLock;
+    if (!wl || wakeLockRef.current) return;
+    try {
+      wakeLockRef.current = await wl.request('screen');
+      wakeLockRef.current?.addEventListener('release', () => {
+        wakeLockRef.current = null;
+      });
+    } catch {
+      /* nicht verfügbar / verweigert – Aufzeichnung läuft trotzdem weiter */
+    }
+  }, []);
+
+  const releaseWakeLock = useCallback(() => {
+    wakeLockRef.current?.release().catch(() => {});
+    wakeLockRef.current = null;
+  }, []);
+
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === 'visible' && recordingRef.current) acquireWakeLock();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [acquireWakeLock]);
+
   // --- Recording control -----------------------------------------------------
 
+  // Aktuelle Dauer aus den Akkumulatoren berechnen (laufendes Segment + Pausen).
+  const computeDurationS = useCallback(() => {
+    const running = segmentStartRef.current !== null ? Date.now() - segmentStartRef.current : 0;
+    return Math.max(1, Math.floor((accumulatedMsRef.current + running) / 1000));
+  }, []);
+
+  // Momentaufnahme der laufenden Fahrt – Felder identisch zur finalen Summary.
+  const buildSummary = useCallback((): RideSummary | null => {
+    if (!startedAtRef.current) return null;
+    const avgSpeed = speedSamplesRef.current > 0 ? speedSumRef.current / speedSamplesRef.current : 0;
+    return {
+      startedAt: startedAtRef.current,
+      endedAt: Date.now(),
+      durationS: computeDurationS(),
+      distanceM: distanceRef.current,
+      maxSpeedKmh: maxSpeedRef.current,
+      avgSpeedKmh: avgSpeed,
+      maxLeanLeft: maxLeanLeftRef.current,
+      maxLeanRight: maxLeanRightRef.current,
+      track: trackRef.current,
+    };
+  }, [computeDurationS]);
+
+  const persistDraft = useCallback(() => {
+    const summary = buildSummary();
+    if (summary) saveDraft({ ...summary, updatedAt: Date.now() });
+  }, [buildSummary]);
+
   const startWatchers = useCallback(() => {
+    acquireWakeLock();
     if (watchIdRef.current === null && navigator.geolocation) {
       watchIdRef.current = navigator.geolocation.watchPosition(
         (pos) => {
@@ -172,7 +236,10 @@ export function useRideRecorder(options: RecorderOptions = {}) {
               longitude,
             );
             // GPS-Rauschen bei Stillstand filtern
-            if (dist > 1) setDistanceM((prev) => prev + dist);
+            if (dist > 1) {
+              distanceRef.current += dist;
+              setDistanceM(distanceRef.current);
+            }
           }
 
           // Geschwindigkeit bevorzugt vom GPS; viele Geräte/Browser liefern jedoch
@@ -188,13 +255,17 @@ export function useRideRecorder(options: RecorderOptions = {}) {
 
           setCurrentSpeed(speedKmh);
           currentSpeedRef.current = speedKmh;
-          setMaxSpeedKmh((prev) => Math.max(prev, speedKmh));
+          if (speedKmh > maxSpeedRef.current) maxSpeedRef.current = speedKmh;
+          setMaxSpeedKmh(maxSpeedRef.current);
           speedSumRef.current += speedKmh;
           speedSamplesRef.current += 1;
 
           if (now - lastSampleRef.current >= TRACK_SAMPLE_INTERVAL_MS) {
             lastSampleRef.current = now;
             trackRef.current.push({ ts: now, lat: latitude, lng: longitude, speed: speedKmh, lean: currentLeanRef.current });
+            // Aktuellen Stand sichern (≈ 1×/Sekunde), damit die Fahrt bei einem
+            // Absturz/Neuladen wiederhergestellt werden kann.
+            persistDraft();
           }
 
           onPositionRef.current?.({ lat: latitude, lng: longitude, speedKmh });
@@ -213,7 +284,7 @@ export function useRideRecorder(options: RecorderOptions = {}) {
         }
       }, 1000);
     }
-  }, []);
+  }, [persistDraft, acquireWakeLock]);
 
   const stopWatchers = useCallback(() => {
     if (watchIdRef.current !== null) {
@@ -224,7 +295,8 @@ export function useRideRecorder(options: RecorderOptions = {}) {
       clearInterval(tickIntervalRef.current);
       tickIntervalRef.current = null;
     }
-  }, []);
+    releaseWakeLock();
+  }, [releaseWakeLock]);
 
   const start = useCallback(() => {
     const now = Date.now();
@@ -238,8 +310,11 @@ export function useRideRecorder(options: RecorderOptions = {}) {
     trackRef.current = [];
     speedSumRef.current = 0;
     speedSamplesRef.current = 0;
+    distanceRef.current = 0;
+    maxSpeedRef.current = 0;
     maxLeanLeftRef.current = 0;
     maxLeanRightRef.current = 0;
+    clearDraft();
     setDistanceM(0);
     setDurationS(0);
     setMaxSpeedKmh(0);
@@ -257,9 +332,10 @@ export function useRideRecorder(options: RecorderOptions = {}) {
     }
     recordingRef.current = false;
     currentSpeedRef.current = 0;
+    persistDraft();
     stopWatchers();
     setStatus('paused');
-  }, [stopWatchers]);
+  }, [stopWatchers, persistDraft]);
 
   const resume = useCallback(() => {
     segmentStartRef.current = Date.now();
@@ -279,32 +355,24 @@ export function useRideRecorder(options: RecorderOptions = {}) {
     stopWatchers();
     setStatus('finished');
 
-    if (!startedAtRef.current) return null;
+    const summary = buildSummary();
+    if (!summary) return null;
 
-    const endedAt = Date.now();
-    const finalDurationS = Math.max(1, Math.floor(accumulatedMsRef.current / 1000));
-    const avgSpeed = speedSamplesRef.current > 0 ? speedSumRef.current / speedSamplesRef.current : 0;
-
-    const summary: RideSummary = {
-      startedAt: startedAtRef.current,
-      endedAt,
-      durationS: finalDurationS,
-      distanceM,
-      maxSpeedKmh,
-      avgSpeedKmh: avgSpeed,
-      maxLeanLeft: maxLeanLeftRef.current,
-      maxLeanRight: maxLeanRightRef.current,
-      track: trackRef.current,
-    };
-    setDurationS(finalDurationS);
+    // Fahrt ist abgeschlossen → Entwurf entfernen, damit sie nicht später
+    // fälschlich als „unterbrochen" zur Wiederherstellung angeboten wird.
+    clearDraft();
+    setDurationS(summary.durationS);
     return summary;
-  }, [distanceM, maxSpeedKmh]);
+  }, [buildSummary]);
 
   const reset = useCallback(() => {
     recordingRef.current = false;
     currentSpeedRef.current = 0;
     maxLeanLeftRef.current = 0;
     maxLeanRightRef.current = 0;
+    distanceRef.current = 0;
+    maxSpeedRef.current = 0;
+    clearDraft();
     setStatus('idle');
     setDistanceM(0);
     setDurationS(0);

@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { db } from '../db';
 import { requireAuth, AuthedRequest } from '../middleware/auth';
 import { isUserOnline, broadcastToUsers } from '../ws';
+import { sendPushToUser } from '../push';
 
 export const groupsRouter = Router();
 
@@ -235,6 +236,24 @@ groupsRouter.post('/:id/messages', requireAuth, (req: AuthedRequest, res) => {
     .get(Number(info.lastInsertRowid));
   const message = publicMessage(row);
 
-  broadcastToUsers(memberIds(groupId), { type: 'group-message', groupId, message });
+  const recipients = memberIds(groupId);
+  broadcastToUsers(recipients, { type: 'group-message', groupId, message });
+
+  // Push an alle Mitglieder außer den Absender. Bewusst NICHT auf `isUserOnline`
+  // filtern: Eine im Hintergrund laufende PWA (v. a. iOS) hält ihre WebSocket-
+  // Verbindung oft noch offen und gilt damit fälschlich als „online", obwohl der
+  // Nutzer die Live-Nachricht nicht sieht. Der Service Worker des Empfängers
+  // unterdrückt die Einblendung selbst, wenn die App gerade im Vordergrund ist.
+  const group = db.prepare('SELECT name FROM ride_groups WHERE id = ?').get(groupId) as any;
+  for (const memberId of recipients) {
+    if (memberId === userId) continue;
+    void sendPushToUser(memberId, {
+      title: group?.name ?? 'Gruppe',
+      body: `${message.displayName}: ${body.slice(0, 120)}`,
+      url: `/gruppen/${groupId}`,
+      tag: `group-${groupId}`,
+    });
+  }
+
   res.status(201).json({ message });
 });

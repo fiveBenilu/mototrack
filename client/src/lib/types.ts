@@ -133,5 +133,20 @@ export interface Ride {
   maxLeanLeft: number;
   maxLeanRight: number;
   points: number;
+  shareToken: string | null;
+  track: RideTrackPoint[];
+}
+
+// Öffentlich geteilte Fahrt (read-only, ohne interne IDs/Token).
+export interface SharedRide {
+  startedAt: number;
+  endedAt: number;
+  durationS: number;
+  distanceM: number;
+  maxSpeedKmh: number;
+  avgSpeedKmh: number;
+  maxLeanLeft: number;
+  maxLeanRight: number;
+  riderName: string;
   track: RideTrackPoint[];
 }

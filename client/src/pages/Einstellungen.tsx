@@ -1,10 +1,11 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { PageHeader } from '../components/PageHeader';
 import { Icon } from '../components/Icon';
 import { useAuth } from '../context/AuthContext';
 import { useTheme, type ThemePref } from '../context/ThemeContext';
 import { api, ApiError } from '../lib/api';
+import { getPushState, subscribePush, unsubscribePush, type PushState } from '../lib/push';
 
 const themeOptions: { value: ThemePref; label: string }[] = [
   { value: 'auto', label: 'Automatisch (Tageszeit)' },
@@ -31,6 +32,24 @@ export function Einstellungen() {
 
   const [avatarUploading, setAvatarUploading] = useState(false);
   const [avatarError, setAvatarError] = useState<string | null>(null);
+
+  const [pushState, setPushState] = useState<PushState>('unsubscribed');
+  const [pushBusy, setPushBusy] = useState(false);
+
+  useEffect(() => {
+    getPushState().then(setPushState);
+  }, []);
+
+  async function onTogglePush() {
+    setPushBusy(true);
+    try {
+      setPushState(pushState === 'subscribed' ? await unsubscribePush() : await subscribePush());
+    } catch {
+      setPushState(await getPushState());
+    } finally {
+      setPushBusy(false);
+    }
+  }
 
   async function onLogout() {
     await logout();
@@ -208,6 +227,42 @@ export function Einstellungen() {
               </button>
             ))}
           </div>
+        </section>
+
+        <section className="ios-card p-4">
+          <h2 className="mb-1 text-base font-semibold">Benachrichtigungen</h2>
+          <p className="mb-3 text-sm text-(--color-text-secondary)">
+            Push-Benachrichtigungen für Freundschaftsanfragen und neue Gruppennachrichten – auch wenn die App geschlossen ist.
+          </p>
+          {pushState === 'unsupported' ? (
+            <p className="text-sm text-(--color-text-secondary)">
+              Dieses Gerät/dieser Browser unterstützt keine Push-Benachrichtigungen.
+            </p>
+          ) : pushState === 'denied' ? (
+            <p className="text-sm text-(--color-danger)">
+              Benachrichtigungen sind im Browser blockiert. Bitte in den Website-Einstellungen erlauben.
+            </p>
+          ) : (
+            <button
+              onClick={onTogglePush}
+              disabled={pushBusy}
+              className={`flex w-full items-center justify-center gap-2 rounded-xl py-3 text-sm font-semibold transition active:scale-[0.98] disabled:opacity-50 ${
+                pushState === 'subscribed'
+                  ? 'border border-(--color-border) bg-(--color-bg)'
+                  : 'bg-(--color-accent) text-white'
+              }`}
+            >
+              {pushState === 'subscribed' ? (
+                <>
+                  <Icon name="check" size={18} /> Aktiviert – zum Deaktivieren tippen
+                </>
+              ) : pushBusy ? (
+                'Bitte warten…'
+              ) : (
+                'Benachrichtigungen aktivieren'
+              )}
+            </button>
+          )}
         </section>
 
         <button

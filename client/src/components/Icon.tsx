@@ -26,6 +26,8 @@ export type IconName =
   | 'plus'
   | 'log-out'
   | 'trash'
+  | 'download'
+  | 'share'
   | 'chevron-right'
   | 'chevron-left';
 
@@ -171,6 +173,22 @@ const PATHS: Record<IconName, ReactNode> = {
     <>
       <polyline points="3 6 5 6 21 6" />
       <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+    </>
+  ),
+  download: (
+    <>
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+      <polyline points="7 10 12 15 17 10" />
+      <line x1="12" y1="15" x2="12" y2="3" />
+    </>
+  ),
+  share: (
+    <>
+      <circle cx="18" cy="5" r="3" />
+      <circle cx="6" cy="12" r="3" />
+      <circle cx="18" cy="19" r="3" />
+      <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" />
+      <line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
     </>
   ),
   'chevron-right': <polyline points="9 18 15 12 9 6" />,
