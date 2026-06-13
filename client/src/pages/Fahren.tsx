@@ -95,6 +95,7 @@ export function Fahren() {
             <StatCard label="Ø Speed" value={`${savedSummary.avgSpeedKmh.toFixed(0)} km/h`} icon="chart" />
             <StatCard label="Max. Schräglage links" value={`${savedSummary.maxLeanLeft.toFixed(0)}°`} icon="lean-left" />
             <StatCard label="Max. Schräglage rechts" value={`${savedSummary.maxLeanRight.toFixed(0)}°`} icon="lean-right" />
+            <StatCard label="Max. G-Kraft" value={`${savedSummary.maxG.toFixed(1)} G`} icon="zap" />
           </div>
 
           <div className="ios-card p-4 text-center text-sm text-(--color-text-secondary)">
@@ -131,19 +132,27 @@ export function Fahren() {
   }
 
   if (recorder.status === 'recording' || recorder.status === 'paused') {
+    const paused = recorder.status === 'paused';
     const werte = (
-      <div className="flex flex-col gap-4 p-5">
-        <div className="ios-card flex flex-col items-center gap-1 p-6">
-          <p className="text-6xl font-bold tabular-nums">{recorder.currentSpeed.toFixed(0)}</p>
-          <p className="text-sm font-medium text-(--color-text-secondary)">km/h</p>
+      <div className="flex flex-col gap-3 p-4">
+        {/* Tacho */}
+        <div className="ios-card flex flex-col items-center gap-0.5 py-7">
+          <p className="text-7xl font-bold tabular-nums leading-none">{recorder.currentSpeed.toFixed(0)}</p>
+          <p className="mt-1 text-sm font-medium text-(--color-text-secondary)">km/h</p>
+          <p className="text-xs text-(--color-text-secondary)">Max {recorder.maxSpeedKmh.toFixed(0)} km/h</p>
         </div>
+
+        {/* Schräglage */}
         <div className="ios-card p-4">
           <LeanIndicator lean={recorder.currentLean} />
         </div>
-        <div className="grid grid-cols-3 gap-3">
-          <StatCard label="Distanz" value={formatDistance(recorder.distanceM)} />
-          <StatCard label="Dauer" value={formatDuration(recorder.durationS)} />
-          <StatCard label="Max" value={`${recorder.maxSpeedKmh.toFixed(0)} km/h`} />
+
+        {/* Live-Kennzahlen inkl. G-Kraft */}
+        <div className="grid grid-cols-2 gap-3">
+          <StatCard icon="ruler" label="Distanz" value={formatDistance(recorder.distanceM)} />
+          <StatCard icon="clock" label="Dauer" value={formatDuration(recorder.durationS)} />
+          <StatCard icon="gauge" label="Ø/Max Speed" value={`${recorder.maxSpeedKmh.toFixed(0)} km/h`} />
+          <GForceCard current={recorder.currentG} max={recorder.maxG} />
         </div>
 
         {recorder.lastPass && (
@@ -175,10 +184,19 @@ export function Fahren() {
     );
 
     return (
-      // Vollbild-Layout: Kopf, wischbare Ansichten (Werte/Karte/Konvoi) und
-      // darunter dauerhaft erreichbare Steuerung – Tab-Leiste bleibt sichtbar.
-      <div className="flex flex-col" style={{ height: 'calc(100dvh - 4.75rem)' }}>
-        <PageHeader title={recorder.status === 'paused' ? 'Pausiert' : 'Aufzeichnung läuft'} />
+      // Immersives Vollbild-Layout (Tab-Leiste ist während der Aufzeichnung
+      // ausgeblendet): Statuszeile, wischbare Ansichten und Steuerung mit
+      // Safe-Area-Abstand – nichts wird mehr überdeckt.
+      <div className="flex h-dvh flex-col">
+        <header className="safe-top flex shrink-0 items-center justify-between px-5 pb-2 pt-3">
+          <span className="flex items-center gap-2 text-base font-bold">
+            <span
+              className={`h-2.5 w-2.5 rounded-full ${paused ? 'bg-(--color-text-secondary)' : 'animate-pulse bg-(--color-danger)'}`}
+            />
+            {paused ? 'Pausiert' : 'Aufzeichnung'}
+          </span>
+          <span className="font-mono text-base font-semibold tabular-nums">{formatDuration(recorder.durationS)}</span>
+        </header>
 
         <SwipePager
           className="flex-1"
@@ -189,25 +207,25 @@ export function Fahren() {
           ]}
         />
 
-        <div className="flex shrink-0 gap-3 px-5 pb-2 pt-2">
+        <div className="safe-bottom flex shrink-0 gap-3 border-t border-(--color-border) bg-(--color-card) px-5 pb-2 pt-3">
           {recorder.status === 'recording' ? (
             <button
               onClick={recorder.pause}
-              className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-(--color-border) bg-(--color-bg-elevated) py-3 text-base font-semibold transition active:scale-[0.98]"
+              className="flex flex-1 items-center justify-center gap-2 rounded-2xl border border-(--color-border) bg-(--color-bg-elevated) py-3.5 text-base font-semibold transition active:scale-[0.98]"
             >
               <Icon name="pause" size={18} /> Pause
             </button>
           ) : (
             <button
               onClick={recorder.resume}
-              className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-(--color-border) bg-(--color-bg-elevated) py-3 text-base font-semibold transition active:scale-[0.98]"
+              className="flex flex-1 items-center justify-center gap-2 rounded-2xl border border-(--color-accent) bg-(--color-bg-elevated) py-3.5 text-base font-semibold text-(--color-accent) transition active:scale-[0.98]"
             >
               <Icon name="play" size={18} /> Weiter
             </button>
           )}
           <button
             onClick={handleStop}
-            className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-(--color-danger) py-3 text-base font-semibold text-white transition active:scale-[0.98]"
+            className="flex flex-1 items-center justify-center gap-2 rounded-2xl bg-(--color-danger) py-3.5 text-base font-semibold text-white shadow-lg transition active:scale-[0.98]"
           >
             <Icon name="stop" size={18} /> Beenden
           </button>
@@ -313,6 +331,20 @@ function StatCard({ label, value, icon }: { label: string; value: string; icon?:
       {icon && <Icon name={icon} size={20} className="text-(--color-accent)" />}
       <span className="text-lg font-bold tabular-nums">{value}</span>
       <span className="text-xs text-(--color-text-secondary)">{label}</span>
+    </div>
+  );
+}
+
+// Live-G-Kraft mit farblicher Hervorhebung bei höheren Werten (Bremsen/Kurve).
+function GForceCard({ current, max }: { current: number; max: number }) {
+  const color = current >= 1.4 ? 'var(--color-danger)' : current >= 1.15 ? 'var(--color-warning)' : 'var(--color-accent)';
+  return (
+    <div className="ios-card flex flex-col items-center justify-center gap-1 p-3 text-center">
+      <Icon name="zap" size={20} style={{ color }} />
+      <span className="text-lg font-bold tabular-nums" style={{ color }}>
+        {current.toFixed(1)} G
+      </span>
+      <span className="text-xs text-(--color-text-secondary)">G-Kraft · max {max.toFixed(1)}</span>
     </div>
   );
 }

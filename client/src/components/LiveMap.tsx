@@ -7,7 +7,12 @@ import { Icon, Stars } from './Icon';
 import { useRide } from '../context/RideContext';
 import { useTheme } from '../context/ThemeContext';
 import { api } from '../lib/api';
+import { haversineDistance, bearingDeg, angleDiff } from '../lib/geo';
 import type { Friend } from '../lib/types';
+
+const CAMERA_WARN_RANGE_M = 600; // ab dieser Entfernung vor einem Blitzer warnen
+const CAMERA_WARN_MIN_M = 60; // näher = praktisch erreicht, keine Warnung mehr
+const AHEAD_CONE_DEG = 75; // nur Blitzer „voraus" (innerhalb dieses Winkels zur Fahrtrichtung)
 
 const DEFAULT_CENTER: [number, number] = [51.1657, 10.4515]; // Mitte Deutschland
 
@@ -73,6 +78,10 @@ function escapeHtml(s: string) {
   return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
 }
 
+function fmtMeters(m: number): string {
+  return m < 1000 ? `${Math.round(m / 10) * 10} m` : `${(m / 1000).toFixed(1)} km`;
+}
+
 // Zonen-Tore: andersfarbig (violett) als die roten Einzel-Blitzer. Einfahrt mit
 // Pfeil hinein, Ausfahrt mit Zielflagge (Forza-Stil).
 const ZONE_COLOR = '#a855f7';
@@ -83,7 +92,7 @@ const ZONE_EXIT_SVG =
 
 const zoneEntryIcon = L.divIcon({
   className: '',
-  html: `<div class="zone-marker">${ZONE_ENTRY_SVG}</div>`,
+  html: `<div class="zone-marker zone-marker--entry">${ZONE_ENTRY_SVG}</div>`,
   iconSize: [28, 28],
   iconAnchor: [14, 14],
 });
@@ -105,26 +114,44 @@ const selfIcon = (heading: number | null) =>
     iconAnchor: [14, 14],
   });
 
+// Mindestbewegung des Kartenmittelpunkts bzw. Mindestzeit, bevor erneut Blitzer
+// geladen werden. Verhindert, dass das ständige Nachführen während der Fahrt
+// (panTo bei jedem GPS-Tick → moveend) den Server/Tile-Dienst mit Requests flutet.
+const REFETCH_MIN_MOVE_M = 400;
+const REFETCH_MIN_INTERVAL_MS = 10000;
+
 function BoundsWatcher() {
   const { fetchCamerasForBounds } = useRide();
-  const timersRef = useRef<number[]>([]);
+  const followupRef = useRef<number | null>(null);
+  const lastCenterRef = useRef<{ lat: number; lng: number } | null>(null);
+  const lastFetchRef = useRef(0);
 
-  const refresh = (map: L.Map) => {
+  const refresh = (map: L.Map, force = false) => {
+    const c = map.getCenter();
+    const now = Date.now();
+    const movedFar =
+      !lastCenterRef.current || haversineDistance(c.lat, c.lng, lastCenterRef.current.lat, lastCenterRef.current.lng) > REFETCH_MIN_MOVE_M;
+    if (!force && !movedFar && now - lastFetchRef.current < REFETCH_MIN_INTERVAL_MS) return;
+
+    lastCenterRef.current = { lat: c.lat, lng: c.lng };
+    lastFetchRef.current = now;
+
     const b = map.getBounds();
     const bounds = clampBounds({ minLat: b.getSouth(), minLng: b.getWest(), maxLat: b.getNorth(), maxLng: b.getEast() });
     fetchCamerasForBounds(bounds);
-    timersRef.current.forEach(clearTimeout);
-    timersRef.current = [
-      window.setTimeout(() => fetchCamerasForBounds(bounds), 3000),
-      window.setTimeout(() => fetchCamerasForBounds(bounds), 8000),
-    ];
+    // Eine einzelne, verzögerte Nachladung fängt serverseitig (Overpass) frisch
+    // generierte Blitzer/Zonen ein, ohne den Request-Takt hochzutreiben.
+    if (followupRef.current) clearTimeout(followupRef.current);
+    followupRef.current = window.setTimeout(() => fetchCamerasForBounds(bounds), 6000);
   };
 
   const map = useMapEvents({ moveend: () => refresh(map) });
 
   useEffect(() => {
-    refresh(map);
-    return () => timersRef.current.forEach(clearTimeout);
+    refresh(map, true);
+    return () => {
+      if (followupRef.current) clearTimeout(followupRef.current);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -299,10 +326,11 @@ function FriendPopup({
  * Konvoi-Modus der Aufzeichnung verwendet.
  */
 export function LiveMap({ className, lockView = false }: { className?: string; lockView?: boolean }) {
-  const { cameras, zones, friendLocations, myLocation, lastPass, dismissLastPass, lastZonePass, dismissLastZonePass } =
+  const { cameras, zones, friendLocations, myLocation, lastPass, dismissLastPass, lastZonePass, dismissLastZonePass, activeZoneProgress } =
     useRide();
   const { resolved } = useTheme();
   const [follow, setFollow] = useState(true);
+  const [mapInstance, setMapInstance] = useState<L.Map | null>(null);
   const [friends, setFriends] = useState<Map<number, Friend>>(new Map());
 
   const position = myLocation;
@@ -336,12 +364,28 @@ export function LiveMap({ className, lockView = false }: { className?: string; l
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const selfMarkerIcon = useMemo(() => selfIcon(heading), [heading == null ? null : Math.round(heading)]);
 
+  // Nächster Blitzer voraus (innerhalb der Reichweite und – falls Kurs bekannt –
+  // im Fahrtrichtungs-Kegel). Liefert die Entfernung für die Warn-Einblendung.
+  const cameraAhead = useMemo(() => {
+    if (!position) return null;
+    let best: number | null = null;
+    for (const cam of cameras) {
+      const d = haversineDistance(position.lat, position.lng, cam.lat, cam.lng);
+      if (d > CAMERA_WARN_RANGE_M || d < CAMERA_WARN_MIN_M) continue;
+      if (heading != null && angleDiff(bearingDeg(position.lat, position.lng, cam.lat, cam.lng), heading) > AHEAD_CONE_DEG)
+        continue;
+      if (best == null || d < best) best = d;
+    }
+    return best;
+  }, [cameras, position, heading]);
+
   return (
     // `lockView` (HUD in der Aufzeichnung): Leaflet darf die Touch-Geste nicht
     // abfangen, sonst lässt sich nicht zur nächsten Pager-Seite wischen. Karte
     // folgt dann automatisch der eigenen Position (kein manuelles Verschieben).
     <div className={`relative isolate w-full overflow-hidden ${lockView ? 'leaflet-locked' : ''} ${className ?? ''}`}>
       <MapContainer
+        ref={setMapInstance}
         center={position ? [position.lat, position.lng] : DEFAULT_CENTER}
         zoom={position ? 15 : 6}
         className="h-full w-full"
@@ -417,10 +461,56 @@ export function LiveMap({ className, lockView = false }: { className?: string; l
 
       {!lockView && <FollowButton follow={follow} onToggle={() => setFollow((v) => !v)} />}
 
+      {/* Im HUD ist Pinch/Drag deaktiviert (damit das Wischen funktioniert) →
+          Zoom über Buttons ermöglichen. */}
+      {lockView && (
+        <div className="absolute bottom-4 right-4 z-[1000] flex flex-col gap-2">
+          {(['in', 'out'] as const).map((dir) => (
+            <button
+              key={dir}
+              onClick={() => (dir === 'in' ? mapInstance?.zoomIn() : mapInstance?.zoomOut())}
+              className="flex h-11 w-11 items-center justify-center rounded-full text-xl font-bold shadow-lg transition active:scale-95"
+              style={{ border: '1px solid var(--color-border)', background: 'var(--color-bg-elevated)', color: 'var(--color-accent)' }}
+              aria-label={dir === 'in' ? 'Vergrößern' : 'Verkleinern'}
+            >
+              {dir === 'in' ? '+' : '−'}
+            </button>
+          ))}
+        </div>
+      )}
+
       {position && position.speedKmh >= 1 && (
         <div className="map-hud">
           <span className="text-3xl font-bold tabular-nums leading-none">{position.speedKmh.toFixed(0)}</span>
           <span className="text-xs font-medium text-(--color-text-secondary)">km/h</span>
+        </div>
+      )}
+
+      {/* Blitzer-Warnung voraus (oben links, kollidiert nicht mit den Toasts). */}
+      {cameraAhead != null && !lastPass && (
+        <div
+          className="absolute left-3 top-3 z-[1000] flex items-center gap-2 rounded-full bg-(--color-bg-elevated) px-3 py-1.5 shadow-lg"
+          style={{ border: '1px solid var(--color-danger)' }}
+        >
+          <Icon name="camera" size={16} className="text-(--color-danger)" />
+          <span className="text-sm font-semibold tabular-nums">Blitzer in {fmtMeters(cameraAhead)}</span>
+        </div>
+      )}
+
+      {/* Live-Anzeige, während man sich in einer Blitzer-Zone befindet. */}
+      {activeZoneProgress && (
+        <div
+          className="absolute left-1/2 top-3 z-[1000] -translate-x-1/2 rounded-2xl px-4 py-2.5 text-center text-white shadow-lg"
+          style={{ background: ZONE_COLOR }}
+        >
+          <p className="flex items-center justify-center gap-1.5 text-xs font-semibold uppercase tracking-wide">
+            <Icon name="zap" size={14} /> Zone läuft
+          </p>
+          <p className="text-2xl font-bold tabular-nums leading-tight">⌀ {activeZoneProgress.avgSpeedKmh.toFixed(0)} km/h</p>
+          <p className="flex items-center justify-center gap-2 text-xs">
+            <span>noch {fmtMeters(activeZoneProgress.remainingM)}</span>
+            <Stars count={activeZoneProgress.stars} />
+          </p>
         </div>
       )}
 

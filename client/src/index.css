@@ -156,7 +156,8 @@ body {
   animation: cam-glow 2s ease-in-out infinite;
 }
 
-/* Blitzer-Zonen-Tore: violett, abgesetzt von den roten Einzel-Blitzern. */
+/* Blitzer-Zonen-Tore: Ausfahrt violett (Zielflagge), Einfahrt grün (Start) –
+   so ist die Fahrtrichtung der Mess-Strecke sofort erkennbar. */
 .zone-marker {
   display: flex;
   align-items: center;
@@ -167,6 +168,10 @@ body {
   background: #a855f7;
   border: 2px solid white;
   box-shadow: 0 0 0 3px rgba(168, 85, 247, 0.35);
+}
+.zone-marker--entry {
+  background: #22c55e;
+  box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.35);
 }
 
 /* Globale Statusleiste ganz oben (Offline / Update), Spotify-Stil */

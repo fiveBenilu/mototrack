@@ -200,9 +200,10 @@ interface IconProps {
   size?: number;
   strokeWidth?: number;
   className?: string;
+  style?: import('react').CSSProperties;
 }
 
-export function Icon({ name, size = 24, strokeWidth = 1.8, className }: IconProps) {
+export function Icon({ name, size = 24, strokeWidth = 1.8, className, style }: IconProps) {
   const filled = FILLED.has(name);
   return (
     <svg
@@ -215,6 +216,7 @@ export function Icon({ name, size = 24, strokeWidth = 1.8, className }: IconProp
       strokeLinecap="round"
       strokeLinejoin="round"
       className={className}
+      style={style}
       aria-hidden="true"
     >
       {PATHS[name]}

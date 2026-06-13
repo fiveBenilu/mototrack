@@ -86,6 +86,7 @@ export function RideDetail() {
             <RideStatCard label="Ø Speed" value={`${ride.avgSpeedKmh.toFixed(0)} km/h`} />
             <RideStatCard label="Schräglage links" value={`${ride.maxLeanLeft.toFixed(0)}°`} />
             <RideStatCard label="Schräglage rechts" value={`${ride.maxLeanRight.toFixed(0)}°`} />
+            <RideStatCard label="Max. G-Kraft" value={`${ride.maxG.toFixed(1)} G`} />
           </div>
 
           <div className="flex flex-col gap-3">

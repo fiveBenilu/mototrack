@@ -53,6 +53,7 @@ export function Statistik() {
             <StatCard label="Fahrzeit" value={formatDuration(totals.durationS)} icon="clock" />
             <StatCard label="Top-Speed" value={`${totals.maxSpeedKmh.toFixed(0)} km/h`} icon="gauge" />
             <StatCard label="Max. Schräglage" value={`${Math.max(totals.maxLeanLeft, totals.maxLeanRight).toFixed(0)}°`} icon="motorcycle" />
+            <StatCard label="Max. G-Kraft" value={`${(totals.maxG ?? 0).toFixed(1)} G`} icon="zap" />
             <StatCard label="Blitzer-Punkte" value={String(totals.points)} icon="star" />
           </div>
         )}

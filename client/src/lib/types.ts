@@ -54,6 +54,7 @@ export interface StatsTotals {
   maxSpeedKmh: number;
   maxLeanLeft: number;
   maxLeanRight: number;
+  maxG: number;
   points: number;
 }
 
@@ -143,6 +144,7 @@ export interface Ride {
   avgSpeedKmh: number;
   maxLeanLeft: number;
   maxLeanRight: number;
+  maxG: number;
   points: number;
   shareToken: string | null;
   track: RideTrackPoint[];
@@ -158,6 +160,7 @@ export interface SharedRide {
   avgSpeedKmh: number;
   maxLeanLeft: number;
   maxLeanRight: number;
+  maxG: number;
   riderName: string;
   track: RideTrackPoint[];
 }

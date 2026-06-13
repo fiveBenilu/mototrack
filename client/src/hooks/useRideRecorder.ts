@@ -22,11 +22,15 @@ export interface RideSummary {
   avgSpeedKmh: number;
   maxLeanLeft: number;
   maxLeanRight: number;
+  maxG: number;
   track: TrackPoint[];
 }
 
 const MIN_SPEED_FOR_LEAN_KMH = 8; // unterhalb dieser Geschwindigkeit zählt Schräglage nicht (Stillstand/Rangieren)
 const TRACK_SAMPLE_INTERVAL_MS = 1000;
+const GRAVITY = 9.80665; // m/s² → Umrechnung Beschleunigung in G
+const G_SMOOTHING = 0.8; // Tiefpass gegen Vibrations-Spitzen (0..1, höher = träger)
+const G_UPDATE_INTERVAL_MS = 100; // State-Updates der Live-G-Anzeige drosseln
 
 export interface RecorderOptions {
   onPosition?: (pos: { lat: number; lng: number; speedKmh: number }) => void;
@@ -46,6 +50,8 @@ export function useRideRecorder(options: RecorderOptions = {}) {
   const [maxSpeedKmh, setMaxSpeedKmh] = useState(0);
   const [maxLeanLeft, setMaxLeanLeft] = useState(0);
   const [maxLeanRight, setMaxLeanRight] = useState(0);
+  const [currentG, setCurrentG] = useState(1);
+  const [maxG, setMaxG] = useState(0);
 
   const watchIdRef = useRef<number | null>(null);
   const lastPositionRef = useRef<GeolocationCoordinates | null>(null);
@@ -63,6 +69,9 @@ export function useRideRecorder(options: RecorderOptions = {}) {
   const speedSamplesRef = useRef(0);
   const distanceRef = useRef(0);
   const maxSpeedRef = useRef(0);
+  const currentGRef = useRef(1);
+  const maxGRef = useRef(0);
+  const lastGUpdateRef = useRef(0);
   const calibrationRef = useRef<number | null>(null);
   const currentSpeedRef = useRef(0);
   const tickIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -95,12 +104,22 @@ export function useRideRecorder(options: RecorderOptions = {}) {
       });
     }
 
-    // DeviceOrientation/Motion (iOS 13+ erfordert expliziten Aufruf in einem Button-Tap)
+    // DeviceOrientation/Motion (iOS 13+ erfordert expliziten Aufruf in einem Button-Tap).
+    // Orientierung (Schräglage) und Motion (G-Kräfte) teilen sich auf iOS dieselbe
+    // Berechtigung – wir fragen beide an, damit auch `devicemotion`-Events fließen.
     const DOE = (window as any).DeviceOrientationEvent;
+    const DME = (window as any).DeviceMotionEvent;
     if (DOE && typeof DOE.requestPermission === 'function') {
       try {
         const result: string = await DOE.requestPermission();
         setMotionPermission(result === 'granted' ? 'granted' : 'denied');
+        if (DME && typeof DME.requestPermission === 'function') {
+          try {
+            await DME.requestPermission();
+          } catch {
+            /* Motion-Permission deckt iOS i. d. R. dieselbe Freigabe ab */
+          }
+        }
       } catch {
         setMotionPermission('denied');
       }
@@ -158,6 +177,34 @@ export function useRideRecorder(options: RecorderOptions = {}) {
     return () => window.removeEventListener('deviceorientation', onOrientation);
   }, []);
 
+  // --- G-Kräfte (Beschleunigungssensor) -------------------------------------
+  // Gesamt-G = Betrag des Beschleunigungsvektors (inkl. Schwerkraft) / 9,81.
+  // Im Stand ~1 G; steigt bei Bremsen, Beschleunigen und zügiger Kurvenfahrt.
+  // Ein Tiefpass glättet Vibrations-Spitzen.
+  useEffect(() => {
+    function onMotion(event: DeviceMotionEvent) {
+      const a = event.accelerationIncludingGravity;
+      if (!a || a.x == null || a.y == null || a.z == null) return;
+      const g = Math.sqrt(a.x * a.x + a.y * a.y + a.z * a.z) / GRAVITY;
+      const smoothed = currentGRef.current * G_SMOOTHING + g * (1 - G_SMOOTHING);
+      currentGRef.current = smoothed;
+
+      const now = Date.now();
+      if (now - lastGUpdateRef.current >= G_UPDATE_INTERVAL_MS) {
+        lastGUpdateRef.current = now;
+        setCurrentG(smoothed);
+      }
+
+      if (recordingRef.current && currentSpeedRef.current >= MIN_SPEED_FOR_LEAN_KMH && smoothed > maxGRef.current) {
+        maxGRef.current = smoothed;
+        setMaxG(smoothed);
+      }
+    }
+
+    window.addEventListener('devicemotion', onMotion);
+    return () => window.removeEventListener('devicemotion', onMotion);
+  }, []);
+
   // --- Wake Lock -------------------------------------------------------------
   // Bildschirm während der Aufzeichnung anlassen, damit GPS/Sensoren nicht durch
   // den Standby unterbrochen werden. Das System gibt den Lock beim Wegschalten
@@ -210,6 +257,7 @@ export function useRideRecorder(options: RecorderOptions = {}) {
       avgSpeedKmh: avgSpeed,
       maxLeanLeft: maxLeanLeftRef.current,
       maxLeanRight: maxLeanRightRef.current,
+      maxG: maxGRef.current,
       track: trackRef.current,
     };
   }, [computeDurationS]);
@@ -314,6 +362,8 @@ export function useRideRecorder(options: RecorderOptions = {}) {
     maxSpeedRef.current = 0;
     maxLeanLeftRef.current = 0;
     maxLeanRightRef.current = 0;
+    maxGRef.current = 0;
+    setMaxG(0);
     clearDraft();
     setDistanceM(0);
     setDurationS(0);
@@ -372,6 +422,8 @@ export function useRideRecorder(options: RecorderOptions = {}) {
     maxLeanRightRef.current = 0;
     distanceRef.current = 0;
     maxSpeedRef.current = 0;
+    maxGRef.current = 0;
+    setMaxG(0);
     clearDraft();
     setStatus('idle');
     setDistanceM(0);
@@ -399,6 +451,8 @@ export function useRideRecorder(options: RecorderOptions = {}) {
     maxSpeedKmh,
     maxLeanLeft,
     maxLeanRight,
+    currentG,
+    maxG,
     requestPermissions,
     calibrate,
     start,

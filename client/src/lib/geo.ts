@@ -19,6 +19,20 @@ export function msToKmh(ms: number): number {
   return ms * 3.6;
 }
 
+/** Kompass-Peilung von Punkt 1 nach Punkt 2 in Grad (0 = Norden, im Uhrzeigersinn). */
+export function bearingDeg(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const dLng = toRad(lng2 - lng1);
+  const y = Math.sin(dLng) * Math.cos(toRad(lat2));
+  const x =
+    Math.cos(toRad(lat1)) * Math.sin(toRad(lat2)) - Math.sin(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.cos(dLng);
+  return (Math.atan2(y, x) * 180) / Math.PI;
+}
+
+/** Kleinste absolute Winkeldifferenz zweier Kompass-Richtungen (0–180°). */
+export function angleDiff(a: number, b: number): number {
+  return Math.abs(((a - b + 540) % 360) - 180);
+}
+
 export function formatDuration(totalSeconds: number): string {
   const h = Math.floor(totalSeconds / 3600);
   const m = Math.floor((totalSeconds % 3600) / 60);

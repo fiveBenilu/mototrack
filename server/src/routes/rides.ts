@@ -25,6 +25,7 @@ function publicRide(r: any) {
     avgSpeedKmh: r.avg_speed_kmh,
     maxLeanLeft: r.max_lean_left,
     maxLeanRight: r.max_lean_right,
+    maxG: r.max_g,
     points: r.points,
     shareToken: r.share_token ?? null,
     track: r.track_data ? JSON.parse(r.track_data) : [],
@@ -43,6 +44,7 @@ function sharedRide(r: any) {
     avgSpeedKmh: r.avg_speed_kmh,
     maxLeanLeft: r.max_lean_left,
     maxLeanRight: r.max_lean_right,
+    maxG: r.max_g,
     riderName: r.display_name,
     track: r.track_data ? JSON.parse(r.track_data) : [],
   };
@@ -59,6 +61,7 @@ ridesRouter.post('/', requireAuth, (req: AuthedRequest, res) => {
     avgSpeedKmh,
     maxLeanLeft,
     maxLeanRight,
+    maxG,
     track,
   } = body;
 
@@ -86,8 +89,8 @@ ridesRouter.post('/', requireAuth, (req: AuthedRequest, res) => {
   const result = db
     .prepare(
       `INSERT INTO rides
-        (user_id, started_at, ended_at, duration_s, distance_m, max_speed_kmh, avg_speed_kmh, max_lean_left, max_lean_right, track_data)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        (user_id, started_at, ended_at, duration_s, distance_m, max_speed_kmh, avg_speed_kmh, max_lean_left, max_lean_right, max_g, track_data)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
       req.userId,
@@ -99,6 +102,7 @@ ridesRouter.post('/', requireAuth, (req: AuthedRequest, res) => {
       avgSpeedKmh ?? 0,
       maxLeanLeft ?? 0,
       maxLeanRight ?? 0,
+      maxG ?? 0,
       JSON.stringify(safeTrack),
     );
 

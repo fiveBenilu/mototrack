@@ -60,9 +60,10 @@ export function aggregateTotals(rides: any[], points: number) {
       acc.maxSpeedKmh = Math.max(acc.maxSpeedKmh, r.max_speed_kmh);
       acc.maxLeanLeft = Math.max(acc.maxLeanLeft, r.max_lean_left);
       acc.maxLeanRight = Math.max(acc.maxLeanRight, r.max_lean_right);
+      acc.maxG = Math.max(acc.maxG, r.max_g ?? 0);
       return acc;
     },
-    { rides: 0, distanceM: 0, durationS: 0, maxSpeedKmh: 0, maxLeanLeft: 0, maxLeanRight: 0 },
+    { rides: 0, distanceM: 0, durationS: 0, maxSpeedKmh: 0, maxLeanLeft: 0, maxLeanRight: 0, maxG: 0 },
   );
   return { ...totals, points };
 }

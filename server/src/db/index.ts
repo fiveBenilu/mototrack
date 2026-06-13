@@ -29,6 +29,9 @@ const rideCols = db.prepare(`PRAGMA table_info(rides)`).all() as { name: string 
 if (!rideCols.some((c) => c.name === 'share_token')) {
   db.exec('ALTER TABLE rides ADD COLUMN share_token TEXT');
 }
+if (!rideCols.some((c) => c.name === 'max_g')) {
+  db.exec('ALTER TABLE rides ADD COLUMN max_g REAL NOT NULL DEFAULT 0');
+}
 // Erst jetzt anlegen – Spalte existiert hier sowohl bei frischer als auch bei
 // migrierter DB. IF NOT EXISTS macht den Aufruf idempotent.
 db.exec(

@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS rides (
   avg_speed_kmh REAL NOT NULL DEFAULT 0,
   max_lean_left REAL NOT NULL DEFAULT 0,
   max_lean_right REAL NOT NULL DEFAULT 0,
+  max_g REAL NOT NULL DEFAULT 0,
   points INTEGER NOT NULL DEFAULT 0,
   track_data TEXT, -- JSON array of {ts, lat, lng, speed, lean}
   share_token TEXT, -- gesetzt = Fahrt ist über einen öffentlichen Link einsehbar

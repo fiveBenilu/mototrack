@@ -1,4 +1,5 @@
 import { NavLink } from 'react-router-dom';
+import { useRide } from '../context/RideContext';
 
 const tabs = [
   { to: '/', label: 'Home', icon: HomeIcon },
@@ -10,6 +11,12 @@ const tabs = [
 ];
 
 export function TabBar() {
+  const { status } = useRide();
+  // Während einer laufenden/pausierten Aufzeichnung die Tab-Leiste ausblenden:
+  // immersive Vollbild-Ansicht (Apple-Watch-Workout-Stil), und die Steuer-Buttons
+  // werden nicht mehr von der Leiste überdeckt.
+  if (status === 'recording' || status === 'paused') return null;
+
   return (
     <nav className="safe-bottom fixed bottom-0 left-0 right-0 z-50 mx-auto max-w-[560px] border-t border-(--color-border) bg-(--color-card) backdrop-blur-xl">
       <div className="flex items-stretch justify-between px-1">

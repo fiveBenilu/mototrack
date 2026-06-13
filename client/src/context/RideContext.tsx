@@ -7,7 +7,7 @@ import { haversineDistance } from '../lib/geo';
 import type { SpeedCamera, SpeedZone, FriendLocation } from '../lib/types';
 
 const CAMERA_PASS_RADIUS_M = 75;
-const ZONE_TRIGGER_RADIUS_M = 60; // Nähe zu Ein-/Ausfahrt, um die Messung zu starten/beenden
+const ZONE_TRIGGER_RADIUS_M = 80; // Nähe zu Ein-/Ausfahrt, um die Messung zu starten/beenden (großzügig, da GPS bei High-Speed nur ~1 Punkt/s liefert)
 const ZONE_MAX_DURATION_MS = 15 * 60 * 1000; // länger = abgebrochen (umgekehrt, abgebogen …)
 
 export interface CameraPassResult {
@@ -23,6 +23,22 @@ export interface ZonePassResult {
   durationS: number;
   points: number;
   stars: number;
+}
+
+// Live-Fortschritt, während man sich in einer Zone befindet.
+export interface ZoneProgress {
+  zoneId: number;
+  avgSpeedKmh: number;
+  remainingM: number;
+  stars: number; // projizierte Medaille beim aktuellen Schnitt
+}
+
+// Projizierte Sterne aus dem Schnitt – spiegelt computeZonePassResult auf dem Server.
+function projectedZoneStars(avgSpeedKmh: number): number {
+  if (avgSpeedKmh >= 140) return 3;
+  if (avgSpeedKmh >= 110) return 2;
+  if (avgSpeedKmh >= 80) return 1;
+  return 0;
 }
 
 export interface MyLocation {
@@ -47,6 +63,7 @@ interface RideContextValue extends ReturnType<typeof useRideRecorder> {
   dismissLastPass: () => void;
   lastZonePass: ZonePassResult | null;
   dismissLastZonePass: () => void;
+  activeZoneProgress: ZoneProgress | null;
   subscribeGroupEvents: (cb: (event: GroupEvent) => void) => () => void;
 }
 
@@ -60,12 +77,16 @@ export function RideProvider({ children }: { children: ReactNode }) {
   const [myLocation, setMyLocation] = useState<MyLocation | null>(null);
   const [lastPass, setLastPass] = useState<CameraPassResult | null>(null);
   const [lastZonePass, setLastZonePass] = useState<ZonePassResult | null>(null);
+  const [activeZoneProgress, setActiveZoneProgress] = useState<ZoneProgress | null>(null);
 
   const camerasRef = useRef<SpeedCamera[]>([]);
   const zonesRef = useRef<SpeedZone[]>([]);
   const passedCameraIdsRef = useRef<Set<number>>(new Set());
-  // Laufende Zonen-Messungen: zoneId -> Start-Zeit + Endpunkt, an dem gestartet wurde.
-  const activeZonesRef = useRef<Map<number, { startTs: number; from: 'entry' | 'exit' }>>(new Map());
+  // Laufende Zonen-Messungen: zoneId -> Start-Zeit, Start-Endpunkt und mitlaufende
+  // Strecke (für den Live-Schnitt und die Restdistanz).
+  const activeZonesRef = useRef<Map<number, { startTs: number; from: 'entry' | 'exit'; lastLat: number; lastLng: number; distM: number }>>(
+    new Map(),
+  );
   const passedZoneIdsRef = useRef<Set<number>>(new Set());
   const wsRef = useRef<WebSocket | null>(null);
   const statusRef = useRef<'idle' | 'recording' | 'paused' | 'finished'>('idle');
@@ -167,16 +188,24 @@ export function RideProvider({ children }: { children: ReactNode }) {
       const active = activeZonesRef.current.get(zone.id);
 
       if (!active) {
-        if (dEntry <= ZONE_TRIGGER_RADIUS_M) activeZonesRef.current.set(zone.id, { startTs: now, from: 'entry' });
-        else if (dExit <= ZONE_TRIGGER_RADIUS_M) activeZonesRef.current.set(zone.id, { startTs: now, from: 'exit' });
+        if (dEntry <= ZONE_TRIGGER_RADIUS_M)
+          activeZonesRef.current.set(zone.id, { startTs: now, from: 'entry', lastLat: pos.lat, lastLng: pos.lng, distM: 0 });
+        else if (dExit <= ZONE_TRIGGER_RADIUS_M)
+          activeZonesRef.current.set(zone.id, { startTs: now, from: 'exit', lastLat: pos.lat, lastLng: pos.lng, distM: 0 });
         continue;
       }
+
+      // Zurückgelegte Strecke in der Zone mitführen (für Live-Schnitt & Restweg).
+      active.distM += haversineDistance(active.lastLat, active.lastLng, pos.lat, pos.lng);
+      active.lastLat = pos.lat;
+      active.lastLng = pos.lng;
 
       const reachedOtherEnd = active.from === 'entry' ? dExit <= ZONE_TRIGGER_RADIUS_M : dEntry <= ZONE_TRIGGER_RADIUS_M;
       if (reachedOtherEnd) {
         const durationS = (now - active.startTs) / 1000;
         activeZonesRef.current.delete(zone.id);
         passedZoneIdsRef.current.add(zone.id);
+        setActiveZoneProgress(null);
         if (durationS >= 1) {
           const avgSpeedKmh = (zone.lengthM / durationS) * 3.6;
           api
@@ -190,6 +219,16 @@ export function RideProvider({ children }: { children: ReactNode }) {
         }
       } else if (now - active.startTs > ZONE_MAX_DURATION_MS) {
         activeZonesRef.current.delete(zone.id); // Messung abgebrochen
+        setActiveZoneProgress(null);
+      } else {
+        const elapsedS = (now - active.startTs) / 1000;
+        const avgSpeedKmh = elapsedS > 0 ? (active.distM / elapsedS) * 3.6 : 0;
+        setActiveZoneProgress({
+          zoneId: zone.id,
+          avgSpeedKmh,
+          remainingM: Math.max(0, zone.lengthM - active.distM),
+          stars: projectedZoneStars(avgSpeedKmh),
+        });
       }
     }
   }, []);
@@ -198,8 +237,10 @@ export function RideProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     statusRef.current = recorder.status;
-    if (recorder.status === 'recording' && passedCameraIdsRef.current.size === 0) {
-      // neue Fahrt: sicherstellen, dass die Pass-Liste frisch ist (wird auch bei start() geleert)
+    // Aufzeichnung beendet/pausiert → laufende Zonen-Messung und Live-Anzeige verwerfen.
+    if (recorder.status !== 'recording') {
+      activeZonesRef.current.clear();
+      setActiveZoneProgress(null);
     }
   }, [recorder.status]);
 
@@ -207,6 +248,7 @@ export function RideProvider({ children }: { children: ReactNode }) {
     passedCameraIdsRef.current = new Set();
     passedZoneIdsRef.current = new Set();
     activeZonesRef.current = new Map();
+    setActiveZoneProgress(null);
     rideIdRef.current = null;
     recorder.start();
   }, [recorder]);
@@ -348,6 +390,7 @@ export function RideProvider({ children }: { children: ReactNode }) {
     dismissLastPass,
     lastZonePass,
     dismissLastZonePass,
+    activeZoneProgress,
     subscribeGroupEvents,
   };
 
