@@ -53,6 +53,16 @@ ridesRouter.post('/', requireAuth, (req: AuthedRequest, res) => {
 
   const safeTrack: TrackPoint[] = Array.isArray(track) ? track.slice(0, 20000) : [];
 
+  // Idempotenz: Der Client kann dieselbe Fahrt erneut senden (Retry nach
+  // Verbindungsabbruch, paralleler Auto-Retry). Gleiche Fahrt (Nutzer +
+  // Startzeit) → vorhandene zurückgeben statt ein Duplikat anzulegen.
+  const existing = db
+    .prepare('SELECT * FROM rides WHERE user_id = ? AND started_at = ?')
+    .get(req.userId, startedAt);
+  if (existing) {
+    return res.status(200).json({ ride: publicRide(existing) });
+  }
+
   const result = db
     .prepare(
       `INSERT INTO rides

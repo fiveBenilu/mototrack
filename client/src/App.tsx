@@ -3,6 +3,7 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import { ThemeProvider } from './context/ThemeContext';
 import { RideProvider } from './context/RideContext';
 import { TabBar } from './components/TabBar';
+import { StatusBanners } from './components/StatusBanners';
 import { Login } from './pages/Login';
 import { Register } from './pages/Register';
 import { Home } from './pages/Home';
@@ -67,6 +68,7 @@ function App() {
   return (
     <BrowserRouter>
       <ThemeProvider>
+        <StatusBanners />
         <AuthProvider>
           <RideProvider>
             <AppShell />

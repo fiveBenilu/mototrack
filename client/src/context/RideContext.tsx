@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState, ty
 import { useRideRecorder } from '../hooks/useRideRecorder';
 import { useAuth } from './AuthContext';
 import { api } from '../lib/api';
+import { flushPendingRides } from '../lib/pendingRides';
 import { haversineDistance } from '../lib/geo';
 import type { SpeedCamera, FriendLocation } from '../lib/types';
 
@@ -139,7 +140,10 @@ export function RideProvider({ children }: { children: ReactNode }) {
     recorder.start();
   }, [recorder]);
 
-  // WebSocket-Verbindung für Live-Standorte aufbauen, solange der Nutzer angemeldet ist
+  // WebSocket-Verbindung für Live-Standorte & Gruppenchat – mit automatischem
+  // Reconnect (exponentielles Backoff), damit Standortfreigabe und Chat nach
+  // Verbindungsabbrüchen (Tunnel, App im Hintergrund, Serverneustart) wieder
+  // anspringen, solange der Nutzer angemeldet ist.
   useEffect(() => {
     if (!user) {
       wsRef.current?.close();
@@ -147,39 +151,67 @@ export function RideProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const ws = new WebSocket(`${protocol}//${window.location.host}/ws`);
-    wsRef.current = ws;
+    let stopped = false;
+    let attempt = 0;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
-    // Sobald die Verbindung steht, die letzte bekannte Position sofort senden
-    // (der erste GPS-Fix kommt oft, bevor der Socket offen ist).
-    ws.onopen = () => broadcastMyLocation();
+    const connect = () => {
+      if (stopped) return;
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const ws = new WebSocket(`${protocol}//${window.location.host}/ws`);
+      wsRef.current = ws;
 
-    ws.onmessage = (event) => {
-      try {
-        const msg = JSON.parse(event.data);
-        if (msg.type === 'friend-location') {
-          setFriendLocations((prev) => {
-            const next = new Map(prev);
-            next.set(msg.userId, { userId: msg.userId, lat: msg.lat, lng: msg.lng, speedKmh: msg.speedKmh, ts: msg.ts });
-            return next;
-          });
-        } else if (msg.type === 'friend-offline') {
-          setFriendLocations((prev) => {
-            const next = new Map(prev);
-            next.delete(msg.userId);
-            return next;
-          });
-        } else if (typeof msg.type === 'string' && msg.type.startsWith('group')) {
-          groupListenersRef.current.forEach((cb) => cb(msg as GroupEvent));
+      ws.onopen = () => {
+        attempt = 0;
+        // Sobald die Verbindung steht, die letzte bekannte Position sofort senden
+        // (der erste GPS-Fix kommt oft, bevor der Socket offen ist).
+        broadcastMyLocation();
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const msg = JSON.parse(event.data);
+          if (msg.type === 'friend-location') {
+            setFriendLocations((prev) => {
+              const next = new Map(prev);
+              next.set(msg.userId, { userId: msg.userId, lat: msg.lat, lng: msg.lng, speedKmh: msg.speedKmh, ts: msg.ts });
+              return next;
+            });
+          } else if (msg.type === 'friend-offline') {
+            setFriendLocations((prev) => {
+              const next = new Map(prev);
+              next.delete(msg.userId);
+              return next;
+            });
+          } else if (typeof msg.type === 'string' && msg.type.startsWith('group')) {
+            groupListenersRef.current.forEach((cb) => cb(msg as GroupEvent));
+          }
+        } catch {
+          /* ignore */
         }
-      } catch {
-        /* ignore */
-      }
+      };
+
+      // Bei Fehler schließen → onclose plant den Reconnect.
+      ws.onerror = () => ws.close();
+
+      ws.onclose = () => {
+        if (stopped) return;
+        const delay = Math.min(1000 * 2 ** attempt, 15000); // 1s, 2s, 4s … max 15s
+        attempt += 1;
+        reconnectTimer = setTimeout(connect, delay);
+      };
     };
 
+    connect();
+
     return () => {
-      ws.close();
+      stopped = true;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      const ws = wsRef.current;
+      if (ws) {
+        ws.onclose = null; // absichtliches Schließen darf keinen Reconnect auslösen
+        ws.close();
+      }
       wsRef.current = null;
     };
   }, [user, broadcastMyLocation]);
@@ -218,6 +250,17 @@ export function RideProvider({ children }: { children: ReactNode }) {
       clearInterval(heartbeat);
     };
   }, [user, broadcastMyLocation]);
+
+  // Zuvor fehlgeschlagene Fahrten (kein Netz / Server down beim Beenden) erneut
+  // hochladen: sobald der Nutzer angemeldet ist und immer wenn die Verbindung
+  // zurückkehrt.
+  useEffect(() => {
+    if (!user) return;
+    flushPendingRides();
+    const onOnline = () => flushPendingRides();
+    window.addEventListener('online', onOnline);
+    return () => window.removeEventListener('online', onOnline);
+  }, [user]);
 
   const dismissLastPass = useCallback(() => setLastPass(null), []);
 

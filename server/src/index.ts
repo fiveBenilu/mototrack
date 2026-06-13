@@ -18,7 +18,11 @@ import './db';
 const app = express();
 app.set('trust proxy', 1);
 
-app.use(express.json());
+// Standardlimit von express.json() ist 100 KB – zu wenig für lange Fahrten:
+// Der Recorder erfasst ~1 Trackpunkt/Sekunde, eine 30-Minuten-Fahrt sind also
+// ~1800 Punkte (~150 KB). Limit großzügig anheben (Route deckelt bei 20000
+// Punkten ≈ 1,7 MB), sonst schlägt das Speichern langer Fahrten fehl.
+app.use(express.json({ limit: '5mb' }));
 app.use(cookieParser());
 
 app.use('/api/auth', authRouter);

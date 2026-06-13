@@ -5,7 +5,7 @@ import { LeanIndicator } from '../components/LeanIndicator';
 import { type RideSummary } from '../hooks/useRideRecorder';
 import { useRide } from '../context/RideContext';
 import { formatDistance, formatDuration } from '../lib/geo';
-import { api } from '../lib/api';
+import { savePending, uploadRide } from '../lib/pendingRides';
 
 export function Fahren() {
   const recorder = useRide();
@@ -16,10 +16,8 @@ export function Fahren() {
   const isCalibrated = recorder.calibrationOffset !== null;
 
   useEffect(() => {
-    if (savedSummary && saveState === 'idle') {
-      setSaveState('saving');
-      api
-        .post('/rides', savedSummary)
+    if (savedSummary && saveState === 'saving') {
+      uploadRide(savedSummary)
         .then(() => setSaveState('saved'))
         .catch(() => setSaveState('error'));
     }
@@ -27,7 +25,17 @@ export function Fahren() {
 
   function handleStop() {
     const summary = recorder.stop();
-    if (summary) setSavedSummary(summary);
+    if (summary) {
+      // Fahrt sofort lokal sichern, bevor der Upload versucht wird – so geht sie
+      // nicht verloren, wenn das Speichern fehlschlägt (kein Netz, Server down).
+      savePending(summary);
+      setSavedSummary(summary);
+      setSaveState('saving');
+    }
+  }
+
+  function handleRetry() {
+    if (savedSummary) setSaveState('saving');
   }
 
   function handleNewRide() {
@@ -58,9 +66,17 @@ export function Fahren() {
               </span>
             )}
             {saveState === 'error' && (
-              <span className="flex items-center justify-center gap-1.5 text-(--color-danger)">
-                <Icon name="alert" size={16} /> Speichern fehlgeschlagen – Daten bleiben lokal sichtbar
-              </span>
+              <div className="flex flex-col items-center gap-2">
+                <span className="flex items-center justify-center gap-1.5 text-(--color-danger)">
+                  <Icon name="alert" size={16} /> Speichern fehlgeschlagen – Fahrt ist lokal gesichert
+                </span>
+                <button
+                  onClick={handleRetry}
+                  className="rounded-lg border border-(--color-border) px-4 py-1.5 text-sm font-medium transition active:scale-[0.98]"
+                >
+                  Erneut versuchen
+                </button>
+              </div>
             )}
           </div>
 
