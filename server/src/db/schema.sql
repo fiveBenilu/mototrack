@@ -63,6 +63,35 @@ CREATE TABLE IF NOT EXISTS camera_passes (
   created_at INTEGER NOT NULL DEFAULT (unixepoch())
 );
 
+-- Blitzer-Zonen (Forza-Stil): Mess-Strecke zwischen Ein- und Ausfahrt entlang
+-- einer echten Straße. Ziel ist die höchste Durchschnittsgeschwindigkeit dazwischen.
+-- path_data = JSON [[lat,lng],…] des Straßenverlaufs zwischen den beiden Punkten.
+CREATE TABLE IF NOT EXISTS speed_zones (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  geo_key TEXT NOT NULL UNIQUE,
+  entry_lat REAL NOT NULL,
+  entry_lng REAL NOT NULL,
+  exit_lat REAL NOT NULL,
+  exit_lng REAL NOT NULL,
+  length_m REAL NOT NULL,
+  path_data TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS zone_passes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  zone_id INTEGER NOT NULL REFERENCES speed_zones(id) ON DELETE CASCADE,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  ride_id INTEGER REFERENCES rides(id) ON DELETE CASCADE,
+  avg_speed_kmh REAL NOT NULL,
+  duration_s REAL NOT NULL,
+  points INTEGER NOT NULL,
+  stars INTEGER NOT NULL,
+  created_at INTEGER NOT NULL DEFAULT (unixepoch())
+);
+
+CREATE INDEX IF NOT EXISTS idx_zone_passes_zone ON zone_passes(zone_id);
+CREATE INDEX IF NOT EXISTS idx_zone_passes_user ON zone_passes(user_id);
+
 -- Gruppen für gemeinsame Ausfahrten inkl. Gruppenchat.
 -- "groups"/"GROUPS" sind in SQLite Schlüsselwörter → Tabelle heißt ride_groups.
 CREATE TABLE IF NOT EXISTS ride_groups (

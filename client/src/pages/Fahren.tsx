@@ -1,7 +1,10 @@
 import { useEffect, useState } from 'react';
 import { PageHeader } from '../components/PageHeader';
-import { Icon, type IconName } from '../components/Icon';
+import { Icon, Stars, type IconName } from '../components/Icon';
 import { LeanIndicator } from '../components/LeanIndicator';
+import { SwipePager } from '../components/SwipePager';
+import { LiveMap } from '../components/LiveMap';
+import { ConvoyPanel } from '../components/ConvoyPanel';
 import { type RideSummary } from '../hooks/useRideRecorder';
 import { useRide } from '../context/RideContext';
 import { formatDistance, formatDuration } from '../lib/geo';
@@ -128,48 +131,86 @@ export function Fahren() {
   }
 
   if (recorder.status === 'recording' || recorder.status === 'paused') {
+    const werte = (
+      <div className="flex flex-col gap-4 p-5">
+        <div className="ios-card flex flex-col items-center gap-1 p-6">
+          <p className="text-6xl font-bold tabular-nums">{recorder.currentSpeed.toFixed(0)}</p>
+          <p className="text-sm font-medium text-(--color-text-secondary)">km/h</p>
+        </div>
+        <div className="ios-card p-4">
+          <LeanIndicator lean={recorder.currentLean} />
+        </div>
+        <div className="grid grid-cols-3 gap-3">
+          <StatCard label="Distanz" value={formatDistance(recorder.distanceM)} />
+          <StatCard label="Dauer" value={formatDuration(recorder.durationS)} />
+          <StatCard label="Max" value={`${recorder.maxSpeedKmh.toFixed(0)} km/h`} />
+        </div>
+
+        {recorder.lastPass && (
+          <div className="ios-card flex items-center justify-between p-4">
+            <span className="flex items-center gap-2 font-semibold">
+              <Icon name="camera" size={20} className="text-(--color-danger)" /> Geblitzt mit
+            </span>
+            <span className="flex items-center gap-2">
+              <span className="text-xl font-bold tabular-nums">{recorder.lastPass.speedKmh.toFixed(0)} km/h</span>
+              <span className="text-sm text-(--color-text-secondary)">+{recorder.lastPass.points}</span>
+              <Stars count={recorder.lastPass.stars} />
+            </span>
+          </div>
+        )}
+
+        {recorder.lastZonePass && (
+          <div className="ios-card flex items-center justify-between p-4" style={{ borderColor: '#a855f7' }}>
+            <span className="flex items-center gap-2 font-semibold" style={{ color: '#a855f7' }}>
+              <Icon name="zap" size={20} /> Zonen-Schnitt
+            </span>
+            <span className="flex items-center gap-2">
+              <span className="text-xl font-bold tabular-nums">⌀ {recorder.lastZonePass.avgSpeedKmh.toFixed(0)} km/h</span>
+              <span className="text-sm text-(--color-text-secondary)">+{recorder.lastZonePass.points}</span>
+              <Stars count={recorder.lastZonePass.stars} />
+            </span>
+          </div>
+        )}
+      </div>
+    );
+
     return (
-      <div className="pb-24">
+      // Vollbild-Layout: Kopf, wischbare Ansichten (Werte/Karte/Konvoi) und
+      // darunter dauerhaft erreichbare Steuerung – Tab-Leiste bleibt sichtbar.
+      <div className="flex flex-col" style={{ height: 'calc(100dvh - 4.75rem)' }}>
         <PageHeader title={recorder.status === 'paused' ? 'Pausiert' : 'Aufzeichnung läuft'} />
-        <div className="flex flex-col gap-4 p-5">
-          <div className="ios-card flex flex-col items-center gap-1 p-6">
-            <p className="text-6xl font-bold tabular-nums">{recorder.currentSpeed.toFixed(0)}</p>
-            <p className="text-sm font-medium text-(--color-text-secondary)">km/h</p>
-          </div>
 
-          <div className="ios-card p-4">
-            <LeanIndicator lean={recorder.currentLean} />
-          </div>
+        <SwipePager
+          className="flex-1"
+          pages={[
+            { key: 'werte', label: 'Werte', node: werte },
+            { key: 'karte', label: 'Karte · Blitzer & Freunde', node: <LiveMap className="h-full" lockView /> },
+            { key: 'konvoi', label: 'Konvoi', node: <ConvoyPanel /> },
+          ]}
+        />
 
-          <div className="grid grid-cols-3 gap-3">
-            <StatCard label="Distanz" value={formatDistance(recorder.distanceM)} />
-            <StatCard label="Dauer" value={formatDuration(recorder.durationS)} />
-            <StatCard label="Max" value={`${recorder.maxSpeedKmh.toFixed(0)} km/h`} />
-          </div>
-
-          <div className="flex gap-3">
-            {recorder.status === 'recording' ? (
-              <button
-                onClick={recorder.pause}
-                className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-(--color-border) bg-(--color-bg-elevated) py-3 text-base font-semibold transition active:scale-[0.98]"
-              >
-                <Icon name="pause" size={18} /> Pause
-              </button>
-            ) : (
-              <button
-                onClick={recorder.resume}
-                className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-(--color-border) bg-(--color-bg-elevated) py-3 text-base font-semibold transition active:scale-[0.98]"
-              >
-                <Icon name="play" size={18} /> Weiter
-              </button>
-            )}
+        <div className="flex shrink-0 gap-3 px-5 pb-2 pt-2">
+          {recorder.status === 'recording' ? (
             <button
-              onClick={handleStop}
-              className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-(--color-danger) py-3 text-base font-semibold text-white transition active:scale-[0.98]"
+              onClick={recorder.pause}
+              className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-(--color-border) bg-(--color-bg-elevated) py-3 text-base font-semibold transition active:scale-[0.98]"
             >
-              <Icon name="stop" size={18} /> Beenden
+              <Icon name="pause" size={18} /> Pause
             </button>
-          </div>
+          ) : (
+            <button
+              onClick={recorder.resume}
+              className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-(--color-border) bg-(--color-bg-elevated) py-3 text-base font-semibold transition active:scale-[0.98]"
+            >
+              <Icon name="play" size={18} /> Weiter
+            </button>
+          )}
+          <button
+            onClick={handleStop}
+            className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-(--color-danger) py-3 text-base font-semibold text-white transition active:scale-[0.98]"
+          >
+            <Icon name="stop" size={18} /> Beenden
+          </button>
         </div>
       </div>
     );

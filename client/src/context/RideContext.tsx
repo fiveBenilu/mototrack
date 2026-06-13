@@ -4,13 +4,23 @@ import { useAuth } from './AuthContext';
 import { api } from '../lib/api';
 import { flushPendingRides } from '../lib/pendingRides';
 import { haversineDistance } from '../lib/geo';
-import type { SpeedCamera, FriendLocation } from '../lib/types';
+import type { SpeedCamera, SpeedZone, FriendLocation } from '../lib/types';
 
 const CAMERA_PASS_RADIUS_M = 75;
+const ZONE_TRIGGER_RADIUS_M = 60; // Nähe zu Ein-/Ausfahrt, um die Messung zu starten/beenden
+const ZONE_MAX_DURATION_MS = 15 * 60 * 1000; // länger = abgebrochen (umgekehrt, abgebogen …)
 
 export interface CameraPassResult {
   cameraId: number;
   speedKmh: number;
+  points: number;
+  stars: number;
+}
+
+export interface ZonePassResult {
+  zoneId: number;
+  avgSpeedKmh: number;
+  durationS: number;
   points: number;
   stars: number;
 }
@@ -29,11 +39,14 @@ export type GroupEvent =
 
 interface RideContextValue extends ReturnType<typeof useRideRecorder> {
   cameras: SpeedCamera[];
+  zones: SpeedZone[];
   fetchCamerasForBounds: (bounds: { minLat: number; minLng: number; maxLat: number; maxLng: number }) => Promise<void>;
   friendLocations: Map<number, FriendLocation>;
   myLocation: MyLocation | null;
   lastPass: CameraPassResult | null;
   dismissLastPass: () => void;
+  lastZonePass: ZonePassResult | null;
+  dismissLastZonePass: () => void;
   subscribeGroupEvents: (cb: (event: GroupEvent) => void) => () => void;
 }
 
@@ -42,12 +55,18 @@ const RideContext = createContext<RideContextValue | undefined>(undefined);
 export function RideProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   const [cameras, setCameras] = useState<SpeedCamera[]>([]);
+  const [zones, setZones] = useState<SpeedZone[]>([]);
   const [friendLocations, setFriendLocations] = useState<Map<number, FriendLocation>>(new Map());
   const [myLocation, setMyLocation] = useState<MyLocation | null>(null);
   const [lastPass, setLastPass] = useState<CameraPassResult | null>(null);
+  const [lastZonePass, setLastZonePass] = useState<ZonePassResult | null>(null);
 
   const camerasRef = useRef<SpeedCamera[]>([]);
+  const zonesRef = useRef<SpeedZone[]>([]);
   const passedCameraIdsRef = useRef<Set<number>>(new Set());
+  // Laufende Zonen-Messungen: zoneId -> Start-Zeit + Endpunkt, an dem gestartet wurde.
+  const activeZonesRef = useRef<Map<number, { startTs: number; from: 'entry' | 'exit' }>>(new Map());
+  const passedZoneIdsRef = useRef<Set<number>>(new Set());
   const wsRef = useRef<WebSocket | null>(null);
   const statusRef = useRef<'idle' | 'recording' | 'paused' | 'finished'>('idle');
   const rideIdRef = useRef<number | null>(null);
@@ -74,6 +93,10 @@ export function RideProvider({ children }: { children: ReactNode }) {
     camerasRef.current = cameras;
   }, [cameras]);
 
+  useEffect(() => {
+    zonesRef.current = zones;
+  }, [zones]);
+
   const fetchCamerasForBounds = useCallback(
     async (bounds: { minLat: number; minLng: number; maxLat: number; maxLng: number }) => {
       try {
@@ -83,7 +106,7 @@ export function RideProvider({ children }: { children: ReactNode }) {
           maxLat: String(bounds.maxLat),
           maxLng: String(bounds.maxLng),
         });
-        const data = await api.get<{ cameras: SpeedCamera[] }>(`/cameras?${params.toString()}`);
+        const data = await api.get<{ cameras: SpeedCamera[]; zones: SpeedZone[] }>(`/cameras?${params.toString()}`);
         setCameras((prev) => {
           const merged = new Map(prev.map((c) => [c.id, c]));
           let changed = false;
@@ -93,6 +116,15 @@ export function RideProvider({ children }: { children: ReactNode }) {
           }
           // Unveränderte Referenz beibehalten, damit die Karte nicht bei jedem
           // (auch ergebnislosen) Polling-Durchlauf neu rendert.
+          return changed ? Array.from(merged.values()) : prev;
+        });
+        setZones((prev) => {
+          const merged = new Map(prev.map((z) => [z.id, z]));
+          let changed = false;
+          for (const z of data.zones ?? []) {
+            if (!merged.has(z.id)) changed = true;
+            merged.set(z.id, z);
+          }
           return changed ? Array.from(merged.values()) : prev;
         });
       } catch {
@@ -123,6 +155,43 @@ export function RideProvider({ children }: { children: ReactNode }) {
           .catch(() => {});
       }
     }
+
+    // Blitzer-Zonen: an einem Endpunkt startet die Messung, am anderen endet sie.
+    // Die Durchschnittsgeschwindigkeit ergibt sich aus der bekannten Streckenlänge
+    // der Zone geteilt durch die gemessene Zeit (klassische Section-Control-Logik).
+    const now = Date.now();
+    for (const zone of zonesRef.current) {
+      if (passedZoneIdsRef.current.has(zone.id)) continue;
+      const dEntry = haversineDistance(pos.lat, pos.lng, zone.entryLat, zone.entryLng);
+      const dExit = haversineDistance(pos.lat, pos.lng, zone.exitLat, zone.exitLng);
+      const active = activeZonesRef.current.get(zone.id);
+
+      if (!active) {
+        if (dEntry <= ZONE_TRIGGER_RADIUS_M) activeZonesRef.current.set(zone.id, { startTs: now, from: 'entry' });
+        else if (dExit <= ZONE_TRIGGER_RADIUS_M) activeZonesRef.current.set(zone.id, { startTs: now, from: 'exit' });
+        continue;
+      }
+
+      const reachedOtherEnd = active.from === 'entry' ? dExit <= ZONE_TRIGGER_RADIUS_M : dEntry <= ZONE_TRIGGER_RADIUS_M;
+      if (reachedOtherEnd) {
+        const durationS = (now - active.startTs) / 1000;
+        activeZonesRef.current.delete(zone.id);
+        passedZoneIdsRef.current.add(zone.id);
+        if (durationS >= 1) {
+          const avgSpeedKmh = (zone.lengthM / durationS) * 3.6;
+          api
+            .post<{ pass: ZonePassResult }>(`/cameras/zones/${zone.id}/pass`, {
+              avgSpeedKmh,
+              durationS,
+              rideId: rideIdRef.current,
+            })
+            .then((data) => setLastZonePass(data.pass))
+            .catch(() => {});
+        }
+      } else if (now - active.startTs > ZONE_MAX_DURATION_MS) {
+        activeZonesRef.current.delete(zone.id); // Messung abgebrochen
+      }
+    }
   }, []);
 
   const recorder = useRideRecorder({ onPosition: handlePosition });
@@ -136,6 +205,8 @@ export function RideProvider({ children }: { children: ReactNode }) {
 
   const wrappedStart = useCallback(() => {
     passedCameraIdsRef.current = new Set();
+    passedZoneIdsRef.current = new Set();
+    activeZonesRef.current = new Map();
     rideIdRef.current = null;
     recorder.start();
   }, [recorder]);
@@ -263,16 +334,20 @@ export function RideProvider({ children }: { children: ReactNode }) {
   }, [user]);
 
   const dismissLastPass = useCallback(() => setLastPass(null), []);
+  const dismissLastZonePass = useCallback(() => setLastZonePass(null), []);
 
   const value: RideContextValue = {
     ...recorder,
     start: wrappedStart,
     cameras,
+    zones,
     fetchCamerasForBounds,
     friendLocations,
     myLocation,
     lastPass,
     dismissLastPass,
+    lastZonePass,
+    dismissLastZonePass,
     subscribeGroupEvents,
   };
 

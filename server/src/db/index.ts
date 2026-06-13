@@ -34,3 +34,13 @@ if (!rideCols.some((c) => c.name === 'share_token')) {
 db.exec(
   'CREATE UNIQUE INDEX IF NOT EXISTS idx_rides_share_token ON rides(share_token) WHERE share_token IS NOT NULL',
 );
+
+// Einmalige Migration für Blitzer-Zonen: bereits generierte Kacheln einmal
+// zurücksetzen, damit für schon erkundete Gebiete auch Zonen erzeugt werden
+// (Blitzer werden über geo_key dedupliziert → keine Duplikate, nur eine erneute
+// Overpass-Abfrage beim nächsten Betrachten der Kachel).
+db.exec('CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT)');
+if (!db.prepare("SELECT 1 FROM meta WHERE key = 'zones_migrated'").get()) {
+  db.exec('DELETE FROM generated_regions');
+  db.prepare("INSERT INTO meta (key, value) VALUES ('zones_migrated', '1')").run();
+}

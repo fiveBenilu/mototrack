@@ -156,6 +156,19 @@ body {
   animation: cam-glow 2s ease-in-out infinite;
 }
 
+/* Blitzer-Zonen-Tore: violett, abgesetzt von den roten Einzel-Blitzern. */
+.zone-marker {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: #a855f7;
+  border: 2px solid white;
+  box-shadow: 0 0 0 3px rgba(168, 85, 247, 0.35);
+}
+
 /* Globale Statusleiste ganz oben (Offline / Update), Spotify-Stil */
 .status-banner {
   position: fixed;
@@ -222,6 +235,13 @@ body {
   -webkit-backdrop-filter: blur(20px);
   border: 1px solid var(--color-border);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+}
+
+/* HUD-Karte in der Aufzeichnung: Leaflet setzt sonst `touch-action: none`, was
+   das horizontale Wischen zur nächsten Pager-Seite blockiert. pan-x gibt die
+   horizontale Geste an den Pager zurück (Karte folgt ohnehin automatisch). */
+.leaflet-locked .leaflet-container {
+  touch-action: pan-x !important;
 }
 
 /* Leaflet-Popups an das App-Theme angleichen */

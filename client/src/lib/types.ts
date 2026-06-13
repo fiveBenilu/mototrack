@@ -12,6 +12,17 @@ export interface SpeedCamera {
   lng: number;
 }
 
+// Blitzer-Zone (Forza-Stil): Mess-Strecke zwischen Ein- und Ausfahrt.
+export interface SpeedZone {
+  id: number;
+  entryLat: number;
+  entryLng: number;
+  exitLat: number;
+  exitLng: number;
+  lengthM: number;
+  path: [number, number][]; // Straßenverlauf zwischen Ein- und Ausfahrt
+}
+
 export interface FriendLocation {
   userId: number;
   lat: number;

@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { db } from '../db';
 import { requireAuth, AuthedRequest } from '../middleware/auth';
-import { generateCamerasForTile, computePassResult, COARSE_TILE_DEG } from '../lib/cameraGen';
+import { generateCamerasForTile, computePassResult, computeZonePassResult, COARSE_TILE_DEG } from '../lib/cameraGen';
 
 export const camerasRouter = Router();
 
@@ -12,7 +12,23 @@ function publicCamera(c: any) {
   return { id: c.id, lat: c.lat, lng: c.lng };
 }
 
+function publicZone(z: any) {
+  return {
+    id: z.id,
+    entryLat: z.entry_lat,
+    entryLng: z.entry_lng,
+    exitLat: z.exit_lat,
+    exitLng: z.exit_lng,
+    lengthM: z.length_m,
+    path: z.path_data ? JSON.parse(z.path_data) : [],
+  };
+}
+
 const insertCamera = db.prepare('INSERT OR IGNORE INTO speed_cameras (geo_key, lat, lng) VALUES (?, ?, ?)');
+const insertZone = db.prepare(
+  `INSERT OR IGNORE INTO speed_zones (geo_key, entry_lat, entry_lng, exit_lat, exit_lng, length_m, path_data)
+   VALUES (?, ?, ?, ?, ?, ?, ?)`,
+);
 const markRegion = db.prepare('INSERT OR IGNORE INTO generated_regions (tile_x, tile_y) VALUES (?, ?)');
 const regionExists = db.prepare('SELECT 1 FROM generated_regions WHERE tile_x = ? AND tile_y = ?');
 
@@ -44,10 +60,13 @@ function ensureCamerasForBounds(minLat: number, minLng: number, maxLat: number, 
     const key = `${tx},${ty}`;
     inProgress.add(key);
     generateCamerasForTile(tx, ty)
-      .then((cams) => {
-        if (cams === null) return; // Overpass nicht erreichbar -> Kachel später erneut versuchen
+      .then((result) => {
+        if (result === null) return; // Overpass nicht erreichbar -> Kachel später erneut versuchen
         const persist = db.transaction(() => {
-          for (const c of cams) insertCamera.run(c.geoKey, c.lat, c.lng);
+          for (const c of result.cameras) insertCamera.run(c.geoKey, c.lat, c.lng);
+          for (const z of result.zones) {
+            insertZone.run(z.geoKey, z.entryLat, z.entryLng, z.exitLat, z.exitLng, z.lengthM, JSON.stringify(z.path));
+          }
           markRegion.run(tx, ty);
         });
         persist();
@@ -76,7 +95,66 @@ camerasRouter.get('/', requireAuth, (req: AuthedRequest, res) => {
     .prepare('SELECT * FROM speed_cameras WHERE lat BETWEEN ? AND ? AND lng BETWEEN ? AND ?')
     .all(minLat, maxLat, minLng, maxLng);
 
-  res.json({ cameras: cameras.map(publicCamera) });
+  // Zonen liefern, deren Ein- ODER Ausfahrt im Ausschnitt liegt (damit auch
+  // Zonen sichtbar werden, die in den Rand hineinragen).
+  const zones = db
+    .prepare(
+      `SELECT * FROM speed_zones
+       WHERE (entry_lat BETWEEN ? AND ? AND entry_lng BETWEEN ? AND ?)
+          OR (exit_lat BETWEEN ? AND ? AND exit_lng BETWEEN ? AND ?)`,
+    )
+    .all(minLat, maxLat, minLng, maxLng, minLat, maxLat, minLng, maxLng);
+
+  res.json({ cameras: cameras.map(publicCamera), zones: zones.map(publicZone) });
+});
+
+// Zonen-Durchfahrt werten: Durchschnittsgeschwindigkeit zwischen Ein- und Ausfahrt.
+camerasRouter.post('/zones/:id/pass', requireAuth, (req: AuthedRequest, res) => {
+  const zone = db.prepare('SELECT * FROM speed_zones WHERE id = ?').get(req.params.id) as any;
+  if (!zone) return res.status(404).json({ error: 'Zone nicht gefunden' });
+
+  const { avgSpeedKmh, durationS, rideId } = req.body || {};
+  if (typeof avgSpeedKmh !== 'number' || avgSpeedKmh < 0 || avgSpeedKmh > 400) {
+    return res.status(400).json({ error: 'Ungültige Geschwindigkeit' });
+  }
+  const dur = typeof durationS === 'number' && durationS > 0 ? durationS : 0;
+
+  const { points, stars } = computeZonePassResult(avgSpeedKmh);
+  const result = db
+    .prepare(
+      'INSERT INTO zone_passes (zone_id, user_id, ride_id, avg_speed_kmh, duration_s, points, stars) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    )
+    .run(zone.id, req.userId, rideId ?? null, avgSpeedKmh, dur, points, stars);
+
+  res.status(201).json({
+    pass: { id: result.lastInsertRowid, zoneId: zone.id, avgSpeedKmh, durationS: dur, points, stars },
+  });
+});
+
+// Bestenliste einer Zone (höchster Schnitt zuerst).
+camerasRouter.get('/zones/:id/leaderboard', requireAuth, (req: AuthedRequest, res) => {
+  const rows = db
+    .prepare(
+      `SELECT zp.avg_speed_kmh, zp.points, zp.stars, zp.created_at, u.id as user_id, u.display_name, u.avatar_path
+       FROM zone_passes zp
+       JOIN users u ON u.id = zp.user_id
+       WHERE zp.zone_id = ?
+       ORDER BY zp.avg_speed_kmh DESC
+       LIMIT 20`,
+    )
+    .all(req.params.id);
+
+  res.json({
+    entries: rows.map((r: any) => ({
+      userId: r.user_id,
+      displayName: r.display_name,
+      avatarPath: r.avatar_path,
+      avgSpeedKmh: r.avg_speed_kmh,
+      points: r.points,
+      stars: r.stars,
+      createdAt: r.created_at,
+    })),
+  });
 });
 
 camerasRouter.get('/:id/leaderboard', requireAuth, (req: AuthedRequest, res) => {
