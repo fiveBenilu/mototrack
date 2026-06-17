@@ -133,16 +133,24 @@ camerasRouter.post('/zones/:id/pass', requireAuth, (req: AuthedRequest, res) => 
 
 // Bestenliste einer Zone (höchster Schnitt zuerst).
 camerasRouter.get('/zones/:id/leaderboard', requireAuth, (req: AuthedRequest, res) => {
+  // Nur der beste Schnitt JE Nutzer und nur Freunde + Nutzer selbst (s. Blitzer-Bestenliste).
   const rows = db
     .prepare(
-      `SELECT zp.avg_speed_kmh, zp.points, zp.stars, zp.created_at, u.id as user_id, u.display_name, u.avatar_path
+      `SELECT MAX(zp.avg_speed_kmh) AS avg_speed_kmh, zp.points, zp.stars, zp.created_at,
+              u.id as user_id, u.display_name, u.avatar_path
        FROM zone_passes zp
        JOIN users u ON u.id = zp.user_id
-       WHERE zp.zone_id = ?
-       ORDER BY zp.avg_speed_kmh DESC
+       WHERE zp.zone_id = @zoneId
+         AND (zp.user_id = @me OR zp.user_id IN (
+           SELECT CASE WHEN f.user_id = @me THEN f.friend_id ELSE f.user_id END
+           FROM friendships f
+           WHERE f.status = 'accepted' AND (f.user_id = @me OR f.friend_id = @me)
+         ))
+       GROUP BY zp.user_id
+       ORDER BY avg_speed_kmh DESC
        LIMIT 20`,
     )
-    .all(req.params.id);
+    .all({ zoneId: Number(req.params.id), me: req.userId });
 
   res.json({
     entries: rows.map((r: any) => ({
@@ -158,16 +166,26 @@ camerasRouter.get('/zones/:id/leaderboard', requireAuth, (req: AuthedRequest, re
 });
 
 camerasRouter.get('/:id/leaderboard', requireAuth, (req: AuthedRequest, res) => {
+  // Nur die beste Durchfahrt JE Nutzer (MAX(speed) – SQLite übernimmt die übrigen
+  // "bare columns" aus genau dieser Zeile) und nur von Freunden + dem Nutzer
+  // selbst. Gespeicherte Durchfahrten bleiben unangetastet (Punkte-Summen!).
   const rows = db
     .prepare(
-      `SELECT cp.speed_kmh, cp.points, cp.stars, cp.created_at, u.id as user_id, u.display_name, u.avatar_path
+      `SELECT MAX(cp.speed_kmh) AS speed_kmh, cp.points, cp.stars, cp.created_at,
+              u.id as user_id, u.display_name, u.avatar_path
        FROM camera_passes cp
        JOIN users u ON u.id = cp.user_id
-       WHERE cp.camera_id = ?
-       ORDER BY cp.speed_kmh DESC
+       WHERE cp.camera_id = @cameraId
+         AND (cp.user_id = @me OR cp.user_id IN (
+           SELECT CASE WHEN f.user_id = @me THEN f.friend_id ELSE f.user_id END
+           FROM friendships f
+           WHERE f.status = 'accepted' AND (f.user_id = @me OR f.friend_id = @me)
+         ))
+       GROUP BY cp.user_id
+       ORDER BY speed_kmh DESC
        LIMIT 20`,
     )
-    .all(req.params.id);
+    .all({ cameraId: Number(req.params.id), me: req.userId });
 
   res.json({
     entries: rows.map((r: any) => ({
