@@ -4,6 +4,7 @@ import { ThemeProvider } from './context/ThemeContext';
 import { RideProvider } from './context/RideContext';
 import { TabBar } from './components/TabBar';
 import { StatusBanners } from './components/StatusBanners';
+import { ConsentBanner } from './components/ConsentBanner';
 import { Login } from './pages/Login';
 import { Register } from './pages/Register';
 import { Home } from './pages/Home';
@@ -17,6 +18,21 @@ import { FriendProfile } from './pages/FriendProfile';
 import { Groups } from './pages/Groups';
 import { GroupDetail } from './pages/GroupDetail';
 import { PublicRide } from './pages/PublicRide';
+import { Impressum } from './pages/legal/Impressum';
+import { Datenschutz } from './pages/legal/Datenschutz';
+import { Nutzungsbedingungen } from './pages/legal/Nutzungsbedingungen';
+
+const LEGAL_PATHS = ['/impressum', '/datenschutz', '/nutzungsbedingungen'];
+
+function LegalRoutes() {
+  return (
+    <Routes>
+      <Route path="/impressum" element={<Impressum />} />
+      <Route path="/datenschutz" element={<Datenschutz />} />
+      <Route path="/nutzungsbedingungen" element={<Nutzungsbedingungen />} />
+    </Routes>
+  );
+}
 
 function AppShell() {
   const { user, loading } = useAuth();
@@ -30,6 +46,11 @@ function AppShell() {
         <Route path="/r/:token" element={<PublicRide />} />
       </Routes>
     );
+  }
+
+  // Rechtstexte müssen ohne Anmeldung erreichbar sein (Pflichtinformationen).
+  if (LEGAL_PATHS.includes(location.pathname)) {
+    return <LegalRoutes />;
   }
 
   if (loading) {
@@ -83,6 +104,7 @@ function App() {
         <AuthProvider>
           <RideProvider>
             <AppShell />
+            <ConsentBanner />
           </RideProvider>
         </AuthProvider>
       </ThemeProvider>

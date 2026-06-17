@@ -18,7 +18,7 @@ function generateFriendCode(): string {
   throw new Error('Konnte keinen eindeutigen Friend-Code generieren');
 }
 
-const cookieOptions = {
+export const cookieOptions = {
   httpOnly: true,
   secure: config.isProd,
   sameSite: (config.isProd ? 'none' : 'lax') as 'none' | 'lax',

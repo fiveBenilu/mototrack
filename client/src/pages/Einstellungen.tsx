@@ -36,9 +36,77 @@ export function Einstellungen() {
   const [pushState, setPushState] = useState<PushState>('unsubscribed');
   const [pushBusy, setPushBusy] = useState(false);
 
+  const [exporting, setExporting] = useState(false);
+  const [dataError, setDataError] = useState<string | null>(null);
+  const [showDelete, setShowDelete] = useState(false);
+  const [deletePassword, setDeletePassword] = useState('');
+  const [deleting, setDeleting] = useState(false);
+
   useEffect(() => {
     getPushState().then(setPushState);
   }, []);
+
+  async function onExportData() {
+    setDataError(null);
+    setExporting(true);
+    try {
+      const res = await fetch('/api/users/me/export', { credentials: 'include' });
+      if (!res.ok) {
+        // Echte Server-Fehlermeldung durchreichen statt eines generischen Texts.
+        let msg = `Export fehlgeschlagen (HTTP ${res.status})`;
+        try {
+          const data = await res.json();
+          if (data?.error) msg = data.error;
+        } catch {
+          /* keine JSON-Antwort (z. B. veraltete Server-Version → bitte neu starten) */
+        }
+        throw new Error(msg);
+      }
+
+      const blob = await res.blob();
+      const filename = `mototrack-export-${new Date().toISOString().slice(0, 10)}.json`;
+      const url = URL.createObjectURL(blob);
+
+      // Standard-Download per <a download>. Funktioniert auf Desktop und
+      // modernem mobilem Safari.
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.rel = 'noopener';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+
+      // Fallback für installierte iOS-PWAs (standalone), in denen der
+      // <a download>-Klick oft ignoriert wird: Datei in einem neuen Tab öffnen,
+      // sodass sie über das Teilen-Menü gesichert werden kann.
+      const isStandalone =
+        window.matchMedia?.('(display-mode: standalone)').matches ||
+        (navigator as unknown as { standalone?: boolean }).standalone === true;
+      if (isStandalone) window.open(url, '_blank');
+
+      // URL erst verzögert freigeben, damit Download/Tab sie noch laden können.
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+    } catch (err) {
+      setDataError(err instanceof Error ? err.message : 'Export fehlgeschlagen. Bitte später erneut versuchen.');
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  async function onDeleteAccount() {
+    setDataError(null);
+    setDeleting(true);
+    try {
+      await api.del('/users/me', { password: deletePassword });
+      await logout();
+      navigate('/login');
+    } catch (err) {
+      setDataError(err instanceof ApiError ? err.message : 'Löschen fehlgeschlagen');
+    } finally {
+      setDeleting(false);
+    }
+  }
 
   async function onTogglePush() {
     setPushBusy(true);
@@ -263,6 +331,86 @@ export function Einstellungen() {
               )}
             </button>
           )}
+        </section>
+
+        <section className="ios-card p-4">
+          <h2 className="mb-1 text-base font-semibold">Daten & Datenschutz</h2>
+          <p className="mb-3 text-sm text-(--color-text-secondary)">
+            Lade alle zu dir gespeicherten Daten herunter (DSGVO Art. 20) oder lösche dein Konto
+            endgültig (Art. 17).
+          </p>
+          <button
+            onClick={onExportData}
+            disabled={exporting}
+            className="flex w-full items-center justify-center gap-2 rounded-xl border border-(--color-border) bg-(--color-bg) py-3 text-sm font-semibold transition active:scale-[0.98] disabled:opacity-50"
+          >
+            <Icon name="download" size={18} />
+            {exporting ? 'Wird vorbereitet…' : 'Meine Daten exportieren'}
+          </button>
+
+          {!showDelete ? (
+            <button
+              onClick={() => setShowDelete(true)}
+              className="mt-3 w-full rounded-xl border border-(--color-danger) py-3 text-sm font-semibold text-(--color-danger) transition active:scale-[0.98]"
+            >
+              Konto löschen
+            </button>
+          ) : (
+            <div className="mt-3 rounded-xl border border-(--color-danger) p-3">
+              <p className="mb-2 text-sm font-semibold text-(--color-danger)">
+                Konto und alle Daten unwiderruflich löschen?
+              </p>
+              <p className="mb-3 text-xs text-(--color-text-secondary)">
+                Alle Fahrten, Freundschaften, Gruppen und Nachrichten werden sofort gelöscht. Gib zur
+                Bestätigung dein Passwort ein.
+              </p>
+              <input
+                type="password"
+                value={deletePassword}
+                onChange={(e) => setDeletePassword(e.target.value)}
+                placeholder="Passwort"
+                className="mb-2 w-full rounded-xl border border-(--color-border) bg-(--color-bg) px-4 py-3 text-sm outline-none"
+              />
+              <div className="flex gap-2">
+                <button
+                  onClick={onDeleteAccount}
+                  disabled={deleting || deletePassword.length === 0}
+                  className="flex-1 rounded-xl bg-(--color-danger) py-3 text-sm font-semibold text-white transition active:scale-[0.98] disabled:opacity-50"
+                >
+                  {deleting ? 'Wird gelöscht…' : 'Endgültig löschen'}
+                </button>
+                <button
+                  onClick={() => {
+                    setShowDelete(false);
+                    setDeletePassword('');
+                    setDataError(null);
+                  }}
+                  className="rounded-xl border border-(--color-border) px-4 py-3 text-sm font-medium transition active:scale-[0.98]"
+                >
+                  Abbrechen
+                </button>
+              </div>
+            </div>
+          )}
+          {dataError && <p className="mt-2 text-sm text-(--color-danger)">{dataError}</p>}
+        </section>
+
+        <section className="ios-card p-4">
+          <h2 className="mb-2 text-base font-semibold">Rechtliches</h2>
+          <div className="flex flex-col divide-y divide-(--color-border)">
+            <Link to="/impressum" className="flex items-center justify-between py-2.5 text-sm font-medium">
+              Impressum
+              <Icon name="chevron-right" size={18} className="text-(--color-text-secondary)" />
+            </Link>
+            <Link to="/datenschutz" className="flex items-center justify-between py-2.5 text-sm font-medium">
+              Datenschutzerklärung
+              <Icon name="chevron-right" size={18} className="text-(--color-text-secondary)" />
+            </Link>
+            <Link to="/nutzungsbedingungen" className="flex items-center justify-between py-2.5 text-sm font-medium">
+              Nutzungsbedingungen
+              <Icon name="chevron-right" size={18} className="text-(--color-text-secondary)" />
+            </Link>
+          </div>
         </section>
 
         <button

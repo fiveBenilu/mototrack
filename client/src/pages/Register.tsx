@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Icon } from '../components/Icon';
+import { LegalFooter } from '../components/LegalFooter';
 import { ApiError } from '../lib/api';
 
 export function Register() {
@@ -10,11 +11,16 @@ export function Register() {
   const [username, setUsername] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [password, setPassword] = useState('');
+  const [accepted, setAccepted] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
+    if (!accepted) {
+      setError('Bitte stimme den Nutzungsbedingungen und der Datenschutzerklärung zu.');
+      return;
+    }
     setError(null);
     setBusy(true);
     try {
@@ -60,10 +66,29 @@ export function Register() {
           onChange={(e) => setPassword(e.target.value)}
           required
         />
+        <label className="flex items-start gap-2 text-xs text-(--color-text-secondary)">
+          <input
+            type="checkbox"
+            checked={accepted}
+            onChange={(e) => setAccepted(e.target.checked)}
+            className="mt-0.5 h-4 w-4 shrink-0 accent-(--color-accent)"
+          />
+          <span>
+            Ich akzeptiere die{' '}
+            <Link to="/nutzungsbedingungen" className="font-semibold text-(--color-accent)">
+              Nutzungsbedingungen
+            </Link>{' '}
+            und habe die{' '}
+            <Link to="/datenschutz" className="font-semibold text-(--color-accent)">
+              Datenschutzerklärung
+            </Link>{' '}
+            gelesen.
+          </span>
+        </label>
         {error && <p className="text-sm text-(--color-danger)">{error}</p>}
         <button
           type="submit"
-          disabled={busy}
+          disabled={busy || !accepted}
           className="mt-1 rounded-xl bg-(--color-accent) py-3 text-base font-semibold text-white transition active:scale-[0.98] disabled:opacity-60"
         >
           {busy ? 'Erstellen…' : 'Account erstellen'}
@@ -75,6 +100,7 @@ export function Register() {
           Anmelden
         </Link>
       </p>
+      <LegalFooter />
     </div>
   );
 }

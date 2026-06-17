@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Icon } from '../components/Icon';
+import { LegalFooter } from '../components/LegalFooter';
 import { ApiError } from '../lib/api';
 
 export function Login() {
@@ -68,6 +69,7 @@ export function Login() {
           Registrieren
         </Link>
       </p>
+      <LegalFooter />
     </div>
   );
 }

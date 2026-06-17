@@ -5,6 +5,7 @@ import { LeanIndicator } from '../components/LeanIndicator';
 import { SwipePager } from '../components/SwipePager';
 import { LiveMap } from '../components/LiveMap';
 import { ConvoyPanel } from '../components/ConvoyPanel';
+import { SafetyGate, SafetyNote } from '../components/SafetyDisclaimer';
 import { type RideSummary } from '../hooks/useRideRecorder';
 import { useRide } from '../context/RideContext';
 import { formatDistance, formatDuration } from '../lib/geo';
@@ -236,8 +237,10 @@ export function Fahren() {
 
   return (
     <div className="pb-24">
+      <SafetyGate />
       <PageHeader title="Fahren" subtitle="Sensoren aktivieren, kalibrieren, los geht's" />
       <div className="flex flex-col gap-4 p-5">
+        <SafetyNote />
         {draft && (
           <section className="ios-card border border-(--color-accent) p-4">
             <h2 className="mb-1 flex items-center gap-1.5 text-base font-semibold">
