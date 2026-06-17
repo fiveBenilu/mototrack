@@ -13,6 +13,7 @@ import { usersRouter } from './routes/users';
 import { statsRouter } from './routes/stats';
 import { groupsRouter } from './routes/groups';
 import { pushRouter } from './routes/push';
+import { adminRouter } from './routes/admin';
 import { setupWebSocket } from './ws';
 import './db';
 
@@ -35,6 +36,7 @@ app.use('/api/users', usersRouter);
 app.use('/api/stats', statsRouter);
 app.use('/api/groups', groupsRouter);
 app.use('/api/push', pushRouter);
+app.use('/api/admin', adminRouter);
 
 // Hochgeladene Dateien (Avatare) als statische Inhalte ausliefern. Zusätzlich
 // härten: `nosniff` verhindert MIME-Sniffing und der Verzicht auf inline-HTML/SVG

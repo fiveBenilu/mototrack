@@ -18,6 +18,7 @@ import { FriendProfile } from './pages/FriendProfile';
 import { Groups } from './pages/Groups';
 import { GroupDetail } from './pages/GroupDetail';
 import { PublicRide } from './pages/PublicRide';
+import { Admin } from './pages/Admin';
 import { Impressum } from './pages/legal/Impressum';
 import { Datenschutz } from './pages/legal/Datenschutz';
 import { Nutzungsbedingungen } from './pages/legal/Nutzungsbedingungen';
@@ -88,6 +89,7 @@ function AppShell() {
           <Route path="/freunde/:id" element={<FriendProfile />} />
           <Route path="/gruppen" element={<Groups />} />
           <Route path="/gruppen/:id" element={<GroupDetail />} />
+          <Route path="/admin" element={user.isAdmin ? <Admin /> : <Navigate to="/" replace />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </div>

@@ -5,6 +5,7 @@ export interface User {
   avatarPath: string | null;
   friendCode: string;
   themePref: 'auto' | 'light' | 'dark';
+  isAdmin?: boolean;
 }
 
 export class ApiError extends Error {

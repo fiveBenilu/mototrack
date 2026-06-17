@@ -216,6 +216,16 @@ export function Einstellungen() {
           <Icon name="chevron-right" size={20} className="text-(--color-text-secondary)" />
         </Link>
 
+        {user?.isAdmin && (
+          <Link to="/admin" className="ios-card flex items-center justify-between p-4">
+            <div className="flex items-center gap-2">
+              <Icon name="gauge" size={24} className="text-(--color-accent)" />
+              <span className="font-semibold">Admin-Dashboard</span>
+            </div>
+            <Icon name="chevron-right" size={20} className="text-(--color-text-secondary)" />
+          </Link>
+        )}
+
         <section className="ios-card p-4">
           <h2 className="mb-2 text-base font-semibold">Profil</h2>
           <form onSubmit={onSaveProfile} className="flex flex-col gap-2">

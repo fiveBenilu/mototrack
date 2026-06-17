@@ -50,6 +50,19 @@ JWT_SECRET="$(openssl rand -hex 32)" NODE_ENV=production npm run start
 
 Beide Verzeichnisse sollten bei Updates/Deployments erhalten bleiben (z. B. als Volume, falls containerisiert).
 
+### Admin-Dashboard
+
+Unter `/admin` gibt es ein Dashboard (alle Konten, Speichernutzung, Konten löschen, Passwörter setzen). Es ist nur für Konten mit Admin-Flag sichtbar. Den Admin-Login legst du auf dem Server an bzw. änderst ihn jederzeit:
+
+```bash
+cd server
+npm run admin -- set <username> <passwort>   # Admin anlegen oder Passwort setzen + zum Admin machen
+npm run admin -- list                         # Admins anzeigen
+npm run admin -- demote <username>            # Admin-Rechte entziehen
+```
+
+Die Datenbank muss dafür existieren (Server mindestens einmal gestartet). Respektiert `DB_PATH`.
+
 ## Deployment mit Cloudflare Tunnel (HTTPS)
 
 Damit iOS-Sensor-APIs und Service Worker funktionieren, braucht die App eine echte HTTPS-Domain. Der Server selbst läuft weiterhin nur über HTTP auf Port 8009 – Cloudflare terminiert TLS.

@@ -3,7 +3,7 @@ import fs from 'fs';
 import path from 'path';
 
 // DB-Pfad per Env überschreibbar (z. B. für isolierte Tests), sonst Standard ../../data.
-const dbPath = process.env.DB_PATH || path.join(__dirname, '../../data', 'mototrack.db');
+export const dbPath = process.env.DB_PATH || path.join(__dirname, '../../data', 'mototrack.db');
 const dataDir = path.dirname(dbPath);
 if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
 
@@ -31,6 +31,12 @@ if (!rideCols.some((c) => c.name === 'share_token')) {
 }
 if (!rideCols.some((c) => c.name === 'max_g')) {
   db.exec('ALTER TABLE rides ADD COLUMN max_g REAL NOT NULL DEFAULT 0');
+}
+
+// Migration: is_admin-Spalte für das Admin-Dashboard ergänzen.
+const userCols = db.prepare(`PRAGMA table_info(users)`).all() as { name: string }[];
+if (!userCols.some((c) => c.name === 'is_admin')) {
+  db.exec('ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0');
 }
 // Erst jetzt anlegen – Spalte existiert hier sowohl bei frischer als auch bei
 // migrierter DB. IF NOT EXISTS macht den Aufruf idempotent.

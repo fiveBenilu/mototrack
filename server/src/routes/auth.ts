@@ -34,6 +34,7 @@ export function publicUser(u: any) {
     avatarPath: u.avatar_path,
     friendCode: u.friend_code,
     themePref: u.theme_pref,
+    isAdmin: !!u.is_admin,
   };
 }
 
