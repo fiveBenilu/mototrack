@@ -1,9 +1,8 @@
 import { Link } from 'react-router-dom';
-import { LegalLayout, LegalSection, Placeholder } from './LegalLayout';
+import { LegalLayout, LegalSection } from './LegalLayout';
 
 // Datenschutzerklärung gemäß DSGVO Art. 13. Die einzelnen Datenkategorien
-// spiegeln das wider, was die App tatsächlich verarbeitet. Konkrete
-// Betreiber-/Hosting-Angaben sind als Platzhalter markiert.
+// spiegeln das wider, was die App tatsächlich verarbeitet.
 export function Datenschutz() {
   return (
     <LegalLayout title="Datenschutzerklärung">
@@ -14,9 +13,11 @@ export function Datenschutz() {
 
       <LegalSection heading="1. Verantwortlicher">
         <p>
-          <Placeholder>Vor- und Nachname / Firmenname</Placeholder>,{' '}
-          <Placeholder>Anschrift</Placeholder>, E-Mail:{' '}
-          <Placeholder>kontakt@deine-domain.de</Placeholder>. Weitere Angaben im{' '}
+          Bennet Griese, Im Katzenbungert 13, 50129 Bergheim, Deutschland. E-Mail:{' '}
+          <a href="mailto:bennet@bgriese.de" className="text-(--color-accent)">
+            bennet@bgriese.de
+          </a>
+          . Weitere Angaben im{' '}
           <Link to="/impressum" className="text-(--color-accent)">
             Impressum
           </Link>
@@ -94,9 +95,10 @@ export function Datenschutz() {
       <LegalSection heading="5. Empfänger und Drittanbieter">
         <ul className="list-disc pl-5">
           <li>
-            <strong>Hosting/Proxy:</strong> <Placeholder>Hosting-Anbieter</Placeholder> sowie ggf.
-            Cloudflare (TLS/Tunnel). Mit diesen besteht ein Auftragsverarbeitungsvertrag (Art. 28
-            DSGVO).
+            <strong>Hosting/Auslieferung:</strong> Der Dienst wird auf einem vom Betreiber selbst
+            betriebenen Server bereitgestellt. Die verschlüsselte Auslieferung (TLS) erfolgt über
+            Cloudflare (Cloudflare Tunnel), Cloudflare, Inc., USA. Dabei wird deine IP-Adresse
+            verarbeitet.
           </li>
           <li>
             <strong>Kartendaten:</strong> Kartenkacheln und Straßendaten werden von OpenStreetMap /
@@ -148,11 +150,7 @@ export function Datenschutz() {
         </p>
       </LegalSection>
 
-      <p className="text-xs text-(--color-text-secondary)">
-        Stand: <Placeholder>Datum einsetzen</Placeholder>. Diese Erklärung enthält Platzhalter und ist
-        vor einer öffentlichen Veröffentlichung zu vervollständigen sowie idealerweise rechtlich prüfen
-        zu lassen.
-      </p>
+      <p className="text-xs text-(--color-text-secondary)">Stand: 17. Juni 2026</p>
     </LegalLayout>
   );
 }

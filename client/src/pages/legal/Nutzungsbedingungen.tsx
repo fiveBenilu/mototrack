@@ -67,8 +67,10 @@ export function Nutzungsbedingungen() {
         <p>
           Für nutzergenerierte Inhalte (insbesondere Gruppen-Chats) sind die jeweiligen Verfasser
           verantwortlich. Rechtswidrige Inhalte können an{' '}
-          <span className="font-mono text-xs">kontakt@deine-domain.de</span> gemeldet und nach Prüfung
-          entfernt werden.
+          <a href="mailto:bennet@bgriese.de" className="text-(--color-accent)">
+            bennet@bgriese.de
+          </a>{' '}
+          gemeldet und nach Prüfung entfernt werden.
         </p>
       </LegalSection>
 

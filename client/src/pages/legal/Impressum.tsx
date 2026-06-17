@@ -1,39 +1,40 @@
-import { LegalLayout, LegalSection, Placeholder } from './LegalLayout';
+import { LegalLayout, LegalSection } from './LegalLayout';
 
-// Pflichtangaben nach § 5 DDG (ehem. TMG). Die Platzhalter MÜSSEN vor der
-// Veröffentlichung durch die echten Angaben des Betreibers ersetzt werden.
+// Pflichtangaben nach § 5 DDG (ehem. TMG). MotoTrack ist ein privates,
+// nicht-kommerzielles Projekt ohne Gewinnerzielungsabsicht.
 export function Impressum() {
   return (
     <LegalLayout title="Impressum">
       <LegalSection heading="Angaben gemäß § 5 DDG">
         <p>
-          <Placeholder>Vor- und Nachname / Firmenname</Placeholder>
+          Bennet Griese
           <br />
-          <Placeholder>Straße und Hausnummer</Placeholder>
+          Im Katzenbungert 13
           <br />
-          <Placeholder>PLZ und Ort</Placeholder>
+          50129 Bergheim
           <br />
-          <Placeholder>Land</Placeholder>
+          Deutschland
         </p>
       </LegalSection>
 
       <LegalSection heading="Kontakt">
         <p>
-          E-Mail: <Placeholder>kontakt@deine-domain.de</Placeholder>
-          <br />
-          Telefon (optional): <Placeholder>Telefonnummer</Placeholder>
+          E-Mail:{' '}
+          <a href="mailto:bennet@bgriese.de" className="text-(--color-accent)">
+            bennet@bgriese.de
+          </a>
         </p>
       </LegalSection>
 
       <LegalSection heading="Verantwortlich für den Inhalt (§ 18 Abs. 2 MStV)">
-        <p>
-          <Placeholder>Vor- und Nachname</Placeholder>, Anschrift wie oben.
-        </p>
+        <p>Bennet Griese, Anschrift wie oben.</p>
       </LegalSection>
 
-      <LegalSection heading="Umsatzsteuer-ID (falls vorhanden)">
+      <LegalSection heading="Art des Angebots">
         <p>
-          USt-IdNr. gemäß § 27 a UStG: <Placeholder>DE… (falls vorhanden)</Placeholder>
+          MotoTrack ist ein privates, nicht-kommerzielles Projekt und wird ohne
+          Gewinnerzielungsabsicht betrieben. Es besteht keine Umsatzsteuerpflicht; eine
+          Umsatzsteuer-Identifikationsnummer liegt daher nicht vor.
         </p>
       </LegalSection>
 
@@ -55,17 +56,11 @@ export function Impressum() {
 
       <LegalSection heading="Haftung für Inhalte & Nutzung">
         <p>
-          MotoTrack ist ein privates/nicht-kommerzielles Hobbyprojekt. Die App dient ausschließlich der
-          Aufzeichnung und Auswertung von Fahrten zu privaten Zwecken. Sie unterstützt oder fördert in
-          keiner Weise Geschwindigkeitsüberschreitungen oder andere Verstöße gegen die
-          Straßenverkehrsordnung. Details siehe Nutzungsbedingungen.
+          MotoTrack dient ausschließlich der Aufzeichnung und Auswertung von Fahrten zu privaten
+          Zwecken. Die App unterstützt oder fördert in keiner Weise Geschwindigkeitsüberschreitungen
+          oder andere Verstöße gegen die Straßenverkehrsordnung. Details siehe Nutzungsbedingungen.
         </p>
       </LegalSection>
-
-      <p className="text-xs text-(--color-text-secondary)">
-        Hinweis: Dieses Impressum enthält Platzhalter und ist vor einer öffentlichen Veröffentlichung
-        mit den tatsächlichen Angaben zu vervollständigen.
-      </p>
     </LegalLayout>
   );
 }

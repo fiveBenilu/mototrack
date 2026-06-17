@@ -35,12 +35,3 @@ export function LegalSection({ heading, children }: { heading: string; children:
     </section>
   );
 }
-
-// Hervorhebung für noch auszufüllende Angaben des Betreibers.
-export function Placeholder({ children }: { children: ReactNode }) {
-  return (
-    <span className="rounded bg-(--color-accent)/15 px-1 font-mono text-xs text-(--color-accent)">
-      [{children}]
-    </span>
-  );
-}
