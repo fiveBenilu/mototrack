@@ -57,6 +57,7 @@ Unter `/admin` gibt es ein Dashboard (alle Konten, Speichernutzung, Konten lösc
 ```bash
 cd server
 npm run admin -- set <username> <passwort>   # Admin anlegen oder Passwort setzen + zum Admin machen
+npm run admin -- promote <username>           # vorhandenes Konto zum Admin machen (Passwort unverändert)
 npm run admin -- list                         # Admins anzeigen
 npm run admin -- demote <username>            # Admin-Rechte entziehen
 ```

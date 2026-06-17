@@ -86,6 +86,16 @@ if (cmd === 'set') {
   process.exit(0);
 }
 
+if (cmd === 'promote') {
+  const username = (args[0] || '').trim().toLowerCase();
+  if (!username) die('Verwendung: node scripts/admin.mjs promote <username>');
+  const user = db.prepare('SELECT id FROM users WHERE username = ?').get(username);
+  if (!user) die(`Nutzer '${username}' nicht gefunden.`);
+  db.prepare('UPDATE users SET is_admin = 1 WHERE id = ?').run(user.id);
+  console.log(`'${username}' ist jetzt Admin (Passwort unverändert).`);
+  process.exit(0);
+}
+
 if (cmd === 'demote') {
   const username = (args[0] || '').trim().toLowerCase();
   if (!username) die('Verwendung: node scripts/admin.mjs demote <username>');
