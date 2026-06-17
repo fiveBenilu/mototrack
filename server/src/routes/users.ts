@@ -7,7 +7,7 @@ import bcrypt from 'bcryptjs';
 import { db } from '../db';
 import { requireAuth, AuthedRequest } from '../middleware/auth';
 import { authLimiter } from '../middleware/rateLimit';
-import { publicUser } from './auth';
+import { publicUser, cookieOptions } from './auth';
 
 export const usersRouter = Router();
 
@@ -115,5 +115,56 @@ usersRouter.post('/me/avatar', requireAuth, upload.single('avatar'), (req: Authe
 
   const updated = db.prepare('SELECT * FROM users WHERE id = ?').get(req.userId);
   res.json({ user: publicUser(updated) });
+});
+
+// DSGVO Art. 20 (Datenübertragbarkeit): vollständiger Export aller zu diesem
+// Nutzer gespeicherten personenbezogenen Daten als JSON-Download. Passwort-Hash
+// und Push-Schlüssel (auth/p256dh) werden bewusst NICHT exportiert – sie sind
+// reine Sicherheitsartefakte ohne Auskunftswert.
+usersRouter.get('/me/export', requireAuth, (req: AuthedRequest, res) => {
+  const uid = req.userId;
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(uid) as any;
+  if (!user) return res.status(404).json({ error: 'Nutzer nicht gefunden' });
+  delete user.password_hash;
+
+  const data = {
+    exportedAt: new Date().toISOString(),
+    note: 'Vollständiger Export deiner bei MotoTrack gespeicherten personenbezogenen Daten (DSGVO Art. 20).',
+    profile: user,
+    rides: db.prepare('SELECT * FROM rides WHERE user_id = ? ORDER BY started_at').all(uid),
+    friendships: db.prepare('SELECT * FROM friendships WHERE user_id = ? OR friend_id = ?').all(uid, uid),
+    ownedGroups: db.prepare('SELECT * FROM ride_groups WHERE owner_id = ?').all(uid),
+    groupMemberships: db.prepare('SELECT * FROM group_members WHERE user_id = ?').all(uid),
+    groupMessages: db.prepare('SELECT * FROM group_messages WHERE user_id = ? ORDER BY created_at').all(uid),
+    cameraPasses: db.prepare('SELECT * FROM camera_passes WHERE user_id = ?').all(uid),
+    zonePasses: db.prepare('SELECT * FROM zone_passes WHERE user_id = ?').all(uid),
+    pushSubscriptions: db.prepare('SELECT endpoint, created_at FROM push_subscriptions WHERE user_id = ?').all(uid),
+  };
+
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="mototrack-export-${uid}.json"`);
+  res.send(JSON.stringify(data, null, 2));
+});
+
+// DSGVO Art. 17 (Recht auf Löschung): löscht das Konto und – über die
+// ON DELETE CASCADE-Fremdschlüssel im Schema – sämtliche damit verknüpften
+// Daten (Fahrten, Freundschaften, eigene Gruppen samt Mitgliedern/Nachrichten,
+// Durchfahrten, Push-Abos). Zur Sicherheit ist das aktuelle Passwort nötig.
+usersRouter.delete('/me', authLimiter, requireAuth, (req: AuthedRequest, res) => {
+  const { password } = req.body || {};
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.userId) as any;
+  if (!user) return res.status(404).json({ error: 'Nutzer nicht gefunden' });
+  if (typeof password !== 'string' || !bcrypt.compareSync(password, user.password_hash)) {
+    return res.status(401).json({ error: 'Passwort ist falsch' });
+  }
+
+  // Profilbild von der Platte entfernen (nur innerhalb des Avatar-Verzeichnisses).
+  if (user.avatar_path) {
+    fs.unlink(path.join(uploadsDir, path.basename(user.avatar_path)), () => {});
+  }
+
+  db.prepare('DELETE FROM users WHERE id = ?').run(req.userId);
+  res.clearCookie('token', { ...cookieOptions, maxAge: undefined });
+  res.json({ ok: true });
 });
 
