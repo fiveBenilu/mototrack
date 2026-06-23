@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { haversineDistance, msToKmh } from '../lib/geo';
 import { saveDraft, clearDraft } from '../lib/rideDraft';
+import { gravityFromOrientation, computeBikeFrame, leanAngle, type BikeFrame } from '../lib/lean';
 
 export type RecorderStatus = 'idle' | 'recording' | 'paused' | 'finished';
 export type PermissionState = 'unknown' | 'granted' | 'denied' | 'unsupported';
@@ -40,7 +41,8 @@ export function useRideRecorder(options: RecorderOptions = {}) {
   const [status, setStatus] = useState<RecorderStatus>('idle');
   const [motionPermission, setMotionPermission] = useState<PermissionState>('unknown');
   const [geoPermission, setGeoPermission] = useState<PermissionState>('unknown');
-  const [calibrationOffset, setCalibrationOffset] = useState<number | null>(null);
+  // Kalibriertes Fahrzeug-Koordinatensystem (null = noch nicht kalibriert).
+  const [calibrationOffset, setCalibrationOffset] = useState<BikeFrame | null>(null);
 
   const [currentSpeed, setCurrentSpeed] = useState(0);
   const [currentLean, setCurrentLean] = useState(0);
@@ -72,7 +74,8 @@ export function useRideRecorder(options: RecorderOptions = {}) {
   const currentGRef = useRef(1);
   const maxGRef = useRef(0);
   const lastGUpdateRef = useRef(0);
-  const calibrationRef = useRef<number | null>(null);
+  const calibrationRef = useRef<BikeFrame | null>(null);
+  const lastOrientationRef = useRef<{ beta: number; gamma: number } | null>(null);
   const currentSpeedRef = useRef(0);
   const tickIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const onPositionRef = useRef<RecorderOptions['onPosition']>(undefined);
@@ -138,22 +141,30 @@ export function useRideRecorder(options: RecorderOptions = {}) {
 
   // --- Calibration ---------------------------------------------------------
 
+  // Aktuelle (aufrechte) Orientierung als Nullposition festhalten und daraus das
+  // Fahrzeug-Koordinatensystem ableiten. Ab dann misst leanAngle die reine
+  // Roll-Drehung – unabhängig davon, wie geneigt das Telefon montiert ist.
   const calibrate = useCallback(() => {
-    if (rawGamma !== null) {
-      setCalibrationOffset(rawGamma);
-      return true;
-    }
-    return false;
-  }, [rawGamma]);
+    const o = lastOrientationRef.current;
+    if (!o) return false;
+    const frame = computeBikeFrame(gravityFromOrientation(o.beta, o.gamma));
+    calibrationRef.current = frame;
+    setCalibrationOffset(frame);
+    return true;
+  }, []);
 
   // --- Orientation handling -------------------------------------------------
 
   useEffect(() => {
     function onOrientation(event: DeviceOrientationEvent) {
-      if (event.gamma === null) return;
+      if (event.gamma === null || event.beta === null) return;
+      lastOrientationRef.current = { beta: event.beta, gamma: event.gamma };
       setRawGamma(event.gamma);
-      const offset = calibrationRef.current ?? 0;
-      const lean = event.gamma - offset;
+
+      // Vor der Kalibrierung 0° anzeigen; danach echte Schräglage aus dem
+      // rekonstruierten Schwerkraftvektor relativ zur Nullposition.
+      const frame = calibrationRef.current;
+      const lean = frame ? leanAngle(frame, gravityFromOrientation(event.beta, event.gamma)) : 0;
       currentLeanRef.current = lean;
       setCurrentLean(lean);
 

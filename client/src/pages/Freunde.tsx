@@ -183,32 +183,34 @@ export function Freunde() {
             <div className="flex flex-col gap-2">
               {friends.map((f) => (
                 <div key={f.id} className="flex items-center justify-between rounded-xl bg-(--color-bg) px-3 py-2">
-                  <Link to={`/freunde/${f.id}`} className="flex flex-1 items-center gap-2">
-                    <div className="relative">
+                  <Link to={`/freunde/${f.id}`} className="flex min-w-0 flex-1 items-center gap-2">
+                    <div className="relative shrink-0">
                       <Avatar name={f.displayName} src={f.avatarPath} />
                       {f.online && (
                         <span className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-(--color-card) bg-(--color-success)" />
                       )}
                     </div>
-                    <div>
-                      <p className="text-sm font-semibold">{f.nickname || f.displayName}</p>
-                      <p className="text-xs text-(--color-text-secondary)">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold">{f.nickname || f.displayName}</p>
+                      <p className="truncate text-xs text-(--color-text-secondary)">
                         {f.nickname ? `${f.displayName} · ` : ''}{f.online ? 'Online' : 'Offline'}
                       </p>
                     </div>
                   </Link>
-                  <div className="flex items-center gap-2">
+                  <div className="flex shrink-0 items-center gap-1">
                     <button
                       onClick={() => onSetNickname(f)}
-                      className="rounded-lg border border-(--color-border) px-3 py-1.5 text-xs font-semibold text-(--color-text-secondary)"
+                      aria-label={`Spitzname für ${f.displayName}`}
+                      className="flex h-9 w-9 items-center justify-center rounded-lg border border-(--color-border) text-(--color-text-secondary) active:scale-95"
                     >
-                      Spitzname
+                      <Icon name="pencil" size={16} />
                     </button>
                     <button
                       onClick={() => onRemove(f.id)}
-                      className="rounded-lg border border-(--color-border) px-3 py-1.5 text-xs font-semibold text-(--color-text-secondary)"
+                      aria-label={`${f.displayName} entfernen`}
+                      className="flex h-9 w-9 items-center justify-center rounded-lg border border-(--color-border) text-(--color-danger) active:scale-95"
                     >
-                      Entfernen
+                      <Icon name="trash" size={16} />
                     </button>
                   </div>
                 </div>
