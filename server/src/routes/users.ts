@@ -44,9 +44,14 @@ function detectImageExt(buf: Buffer): string | null {
 }
 
 usersRouter.put('/me', requireAuth, (req: AuthedRequest, res) => {
-  const { displayName, themePref } = req.body || {};
+  const { displayName, themePref, shareActivity } = req.body || {};
   const updates: string[] = [];
   const values: unknown[] = [];
+
+  if (typeof shareActivity === 'boolean') {
+    updates.push('share_activity = ?');
+    values.push(shareActivity ? 1 : 0);
+  }
 
   if (typeof displayName === 'string') {
     const trimmed = displayName.trim();

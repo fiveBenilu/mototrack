@@ -2,6 +2,9 @@ import { Router } from 'express';
 import crypto from 'crypto';
 import { db } from '../db';
 import { requireAuth, AuthedRequest } from '../middleware/auth';
+import { sendPushToUser } from '../push';
+import { getFriendIds, sharesActivity, resolveFriendName } from '../ws';
+import { friendFinishedRide } from '../notifications';
 
 export const ridesRouter = Router();
 export const publicRidesRouter = Router();
@@ -107,6 +110,16 @@ ridesRouter.post('/', requireAuth, (req: AuthedRequest, res) => {
     );
 
   const ride = db.prepare('SELECT * FROM rides WHERE id = ?').get(result.lastInsertRowid);
+
+  // Freunde über die beendete Tour informieren (nur bei neuer Fahrt, nicht beim Retry).
+  // Respektiert den „anonym"-Schalter; Name pro Empfänger (deren Spitzname für uns).
+  if (sharesActivity(req.userId!)) {
+    for (const friendId of getFriendIds(req.userId!)) {
+      const name = resolveFriendName(friendId, req.userId!);
+      void sendPushToUser(friendId, friendFinishedRide(name, distanceM as number, durationS as number, req.userId!));
+    }
+  }
+
   res.status(201).json({ ride: publicRide(ride) });
 });
 
@@ -121,6 +134,13 @@ ridesRouter.get('/:id', requireAuth, (req: AuthedRequest, res) => {
   const ride = db.prepare('SELECT * FROM rides WHERE id = ? AND user_id = ?').get(req.params.id, req.userId);
   if (!ride) return res.status(404).json({ error: 'Fahrt nicht gefunden' });
   res.json({ ride: publicRide(ride) });
+});
+
+// Einzelne Fahrt löschen. ON DELETE CASCADE räumt camera_passes/zone_passes mit ab.
+ridesRouter.delete('/:id', requireAuth, (req: AuthedRequest, res) => {
+  const r = db.prepare('DELETE FROM rides WHERE id = ? AND user_id = ?').run(req.params.id, req.userId);
+  if (r.changes === 0) return res.status(404).json({ error: 'Fahrt nicht gefunden' });
+  res.json({ ok: true });
 });
 
 // Öffentlichen Link aktivieren (idempotent): erzeugt einmalig ein Token und gibt es zurück.

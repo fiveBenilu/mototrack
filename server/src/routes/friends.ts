@@ -1,8 +1,9 @@
 import { Router } from 'express';
 import { db } from '../db';
 import { requireAuth, AuthedRequest } from '../middleware/auth';
-import { isUserOnline } from '../ws';
+import { isUserOnline, resolveFriendName } from '../ws';
 import { sendPushToUser } from '../push';
+import { friendAccepted } from '../notifications';
 import { aggregateTotals, mapHistory, topCorners } from '../lib/corners';
 
 export const friendsRouter = Router();
@@ -14,6 +15,7 @@ function publicFriend(row: any) {
     displayName: row.display_name,
     avatarPath: row.avatar_path,
     online: isUserOnline(row.id),
+    nickname: row.nickname ?? null,
   };
 }
 
@@ -21,11 +23,12 @@ function publicFriend(row: any) {
 friendsRouter.get('/', requireAuth, (req: AuthedRequest, res) => {
   const rows = db
     .prepare(
-      `SELECT u.id, u.username, u.display_name, u.avatar_path FROM friendships f
+      `SELECT u.id, u.username, u.display_name, u.avatar_path, fn.nickname FROM friendships f
        JOIN users u ON u.id = CASE WHEN f.user_id = ? THEN f.friend_id ELSE f.user_id END
+       LEFT JOIN friend_nicknames fn ON fn.owner_id = ? AND fn.friend_id = u.id
        WHERE (f.user_id = ? OR f.friend_id = ?) AND f.status = 'accepted'`,
     )
-    .all(req.userId, req.userId, req.userId);
+    .all(req.userId, req.userId, req.userId, req.userId);
 
   res.json({ friends: rows.map(publicFriend) });
 });
@@ -98,6 +101,8 @@ friendsRouter.post('/requests/:id/respond', requireAuth, (req: AuthedRequest, re
 
   if (accept) {
     db.prepare('UPDATE friendships SET status = ? WHERE id = ?').run('accepted', request.id);
+    // Den ursprünglichen Anfragenden benachrichtigen – mit dessen Spitzname für uns.
+    void sendPushToUser(request.user_id, friendAccepted(resolveFriendName(request.user_id, req.userId!)));
   } else {
     db.prepare('DELETE FROM friendships WHERE id = ?').run(request.id);
   }
@@ -144,5 +149,31 @@ friendsRouter.delete('/:id', requireAuth, (req: AuthedRequest, res) => {
   db.prepare(
     `DELETE FROM friendships WHERE status = 'accepted' AND ((user_id = ? AND friend_id = ?) OR (user_id = ? AND friend_id = ?))`,
   ).run(req.userId, friendId, friendId, req.userId);
+  db.prepare('DELETE FROM friend_nicknames WHERE owner_id = ? AND friend_id = ?').run(req.userId, friendId);
   res.json({ ok: true });
+});
+
+// Spitzname für einen Freund setzen (leer = entfernen). Nur für bestehende Freunde.
+friendsRouter.put('/:id/nickname', requireAuth, (req: AuthedRequest, res) => {
+  const friendId = Number(req.params.id);
+  const friendship = db
+    .prepare(
+      `SELECT 1 FROM friendships WHERE status = 'accepted'
+       AND ((user_id = ? AND friend_id = ?) OR (user_id = ? AND friend_id = ?))`,
+    )
+    .get(req.userId, friendId, friendId, req.userId);
+  if (!friendship) return res.status(404).json({ error: 'Nutzer nicht gefunden' });
+
+  const nickname = typeof req.body?.nickname === 'string' ? req.body.nickname.trim() : '';
+  if (nickname.length > 30) return res.status(400).json({ error: 'Spitzname: max. 30 Zeichen' });
+
+  if (nickname) {
+    db.prepare(
+      `INSERT INTO friend_nicknames (owner_id, friend_id, nickname) VALUES (?, ?, ?)
+       ON CONFLICT(owner_id, friend_id) DO UPDATE SET nickname = excluded.nickname`,
+    ).run(req.userId, friendId, nickname);
+  } else {
+    db.prepare('DELETE FROM friend_nicknames WHERE owner_id = ? AND friend_id = ?').run(req.userId, friendId);
+  }
+  res.json({ ok: true, nickname: nickname || null });
 });

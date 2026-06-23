@@ -6,6 +6,7 @@ export interface User {
   friendCode: string;
   themePref: 'auto' | 'light' | 'dark';
   isAdmin?: boolean;
+  shareActivity?: boolean;
 }
 
 export class ApiError extends Error {

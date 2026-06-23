@@ -37,6 +37,7 @@ export interface Friend {
   displayName: string;
   avatarPath: string | null;
   online: boolean;
+  nickname?: string | null;
 }
 
 export interface FriendRequest {
@@ -121,6 +122,7 @@ export interface GroupDetail {
   name: string;
   ownerId: number;
   createdAt: number;
+  activeRouteId: number | null;
   members: GroupMember[];
 }
 
@@ -132,6 +134,36 @@ export interface GroupMessage {
   avatarPath: string | null;
   body: string;
   createdAt: number;
+}
+
+export interface RouteStep {
+  lat: number;
+  lng: number;
+  instruction: string;
+  distanceM: number;
+}
+
+// Geplante Tour: Wegpunkte + von OSRM berechneter Straßenverlauf, Dauer und
+// Abbiege-Anweisungen.
+export interface PlannedRoute {
+  id: number;
+  ownerId: number;
+  ownerName: string | null;
+  name: string;
+  distanceM: number;
+  durationS: number;
+  waypoints: [number, number][];
+  geometry: [number, number][];
+  steps: RouteStep[];
+  createdAt: number;
+}
+
+// Routing-Vorschau (noch nicht gespeichert).
+export interface RoutePreview {
+  distanceM: number;
+  durationS: number;
+  geometry: [number, number][];
+  steps: RouteStep[];
 }
 
 export interface Ride {

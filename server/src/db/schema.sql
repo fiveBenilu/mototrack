@@ -7,7 +7,17 @@ CREATE TABLE IF NOT EXISTS users (
   friend_code TEXT NOT NULL UNIQUE,
   theme_pref TEXT NOT NULL DEFAULT 'auto',
   is_admin INTEGER NOT NULL DEFAULT 0,
+  share_activity INTEGER NOT NULL DEFAULT 1, -- 0 = anonym, sendet keine Aktivitäts-Pushes an Freunde
   created_at INTEGER NOT NULL DEFAULT (unixepoch())
+);
+
+-- Spitznamen, die ein Nutzer seinen Freunden gibt (gerichtet, eigene Sicht).
+-- Taucht in Aktivitäts-Benachrichtigungen statt des Anzeigenamens auf.
+CREATE TABLE IF NOT EXISTS friend_nicknames (
+  owner_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  friend_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  nickname TEXT NOT NULL,
+  PRIMARY KEY (owner_id, friend_id)
 );
 
 CREATE TABLE IF NOT EXISTS friendships (
@@ -117,6 +127,30 @@ CREATE TABLE IF NOT EXISTS group_messages (
   body TEXT NOT NULL,
   created_at INTEGER NOT NULL DEFAULT (unixepoch())
 );
+
+-- Geplante Touren (calimoto-Stil): Wegpunkte + von OSRM berechnete Strecke,
+-- Dauer und Abbiege-Anweisungen. geometry/steps werden einmal beim Speichern
+-- berechnet, damit Profilkarte & Navigation ohne erneute Routing-Abfrage gehen.
+CREATE TABLE IF NOT EXISTS routes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  owner_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  distance_m REAL NOT NULL,
+  duration_s REAL NOT NULL,
+  waypoints TEXT NOT NULL, -- JSON [[lat,lng],…]
+  geometry TEXT NOT NULL,  -- JSON [[lat,lng],…] Straßenverlauf
+  steps TEXT NOT NULL,     -- JSON [{lat,lng,instruction,distanceM}]
+  created_at INTEGER NOT NULL DEFAULT (unixepoch())
+);
+
+CREATE TABLE IF NOT EXISTS route_shares (
+  route_id INTEGER NOT NULL REFERENCES routes(id) ON DELETE CASCADE,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  PRIMARY KEY (route_id, user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_routes_owner ON routes(owner_id);
+CREATE INDEX IF NOT EXISTS idx_route_shares_user ON route_shares(user_id);
 
 -- Web-Push-Abonnements (ein Nutzer kann mehrere Geräte/Browser haben).
 CREATE TABLE IF NOT EXISTS push_subscriptions (

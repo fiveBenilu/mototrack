@@ -35,6 +35,7 @@ export function Einstellungen() {
 
   const [pushState, setPushState] = useState<PushState>('unsubscribed');
   const [pushBusy, setPushBusy] = useState(false);
+  const [shareBusy, setShareBusy] = useState(false);
 
   const [exporting, setExporting] = useState(false);
   const [dataError, setDataError] = useState<string | null>(null);
@@ -116,6 +117,19 @@ export function Einstellungen() {
       setPushState(await getPushState());
     } finally {
       setPushBusy(false);
+    }
+  }
+
+  async function onToggleShareActivity() {
+    if (!user) return;
+    setShareBusy(true);
+    try {
+      const data = await api.put<{ user: typeof user }>('/users/me', {
+        shareActivity: !(user.shareActivity ?? true),
+      });
+      if (data.user) setUser(data.user);
+    } finally {
+      setShareBusy(false);
     }
   }
 
@@ -341,6 +355,26 @@ export function Einstellungen() {
               )}
             </button>
           )}
+        </section>
+
+        <section className="ios-card p-4">
+          <h2 className="mb-1 text-base font-semibold">Aktivität teilen</h2>
+          <p className="mb-3 text-sm text-(--color-text-secondary)">
+            Wenn aktiv, bekommen deine Freunde eine Benachrichtigung, wenn du online gehst, losfährst
+            oder eine Tour beendest. Aus = du fährst anonym.
+          </p>
+          <button
+            onClick={onToggleShareActivity}
+            disabled={shareBusy}
+            className={`flex w-full items-center justify-between rounded-xl border px-4 py-3 text-left text-sm font-medium transition active:scale-[0.98] disabled:opacity-50 ${
+              (user?.shareActivity ?? true)
+                ? 'border-(--color-accent) bg-(--color-accent)/10 text-(--color-accent)'
+                : 'border-(--color-border) bg-(--color-bg)'
+            }`}
+          >
+            {(user?.shareActivity ?? true) ? 'Aktivität wird geteilt' : 'Anonym – nichts wird geteilt'}
+            {(user?.shareActivity ?? true) && <Icon name="check" size={18} />}
+          </button>
         </section>
 
         <section className="ios-card p-4">

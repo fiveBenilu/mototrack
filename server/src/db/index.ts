@@ -38,11 +38,20 @@ const userCols = db.prepare(`PRAGMA table_info(users)`).all() as { name: string 
 if (!userCols.some((c) => c.name === 'is_admin')) {
   db.exec('ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0');
 }
+if (!userCols.some((c) => c.name === 'share_activity')) {
+  db.exec('ALTER TABLE users ADD COLUMN share_activity INTEGER NOT NULL DEFAULT 1');
+}
 // Erst jetzt anlegen – Spalte existiert hier sowohl bei frischer als auch bei
 // migrierter DB. IF NOT EXISTS macht den Aufruf idempotent.
 db.exec(
   'CREATE UNIQUE INDEX IF NOT EXISTS idx_rides_share_token ON rides(share_token) WHERE share_token IS NOT NULL',
 );
+
+// Migration: aktive Gruppen-Route (für gemeinsame geführte Ausfahrten).
+const groupCols = db.prepare(`PRAGMA table_info(ride_groups)`).all() as { name: string }[];
+if (!groupCols.some((c) => c.name === 'active_route_id')) {
+  db.exec('ALTER TABLE ride_groups ADD COLUMN active_route_id INTEGER REFERENCES routes(id) ON DELETE SET NULL');
+}
 
 // Einmalige Migration für Blitzer-Zonen: bereits generierte Kacheln einmal
 // zurücksetzen, damit für schon erkundete Gebiete auch Zonen erzeugt werden

@@ -56,6 +56,17 @@ export function Freunde() {
     }
   }
 
+  async function onSetNickname(friend: Friend) {
+    const input = prompt(`Spitzname für ${friend.displayName} (leer = entfernen):`, friend.nickname ?? '');
+    if (input === null) return; // Abbruch
+    try {
+      await api.put(`/friends/${friend.id}/nickname`, { nickname: input.trim() });
+      loadAll();
+    } catch {
+      /* ignore */
+    }
+  }
+
   async function onRemove(friendId: number) {
     try {
       await api.del(`/friends/${friendId}`);
@@ -180,18 +191,19 @@ export function Freunde() {
                       )}
                     </div>
                     <div>
-                      <p className="text-sm font-semibold">{f.displayName}</p>
-                      <p className="text-xs text-(--color-text-secondary)">{f.online ? 'Online' : 'Offline'}</p>
+                      <p className="text-sm font-semibold">{f.nickname || f.displayName}</p>
+                      <p className="text-xs text-(--color-text-secondary)">
+                        {f.nickname ? `${f.displayName} · ` : ''}{f.online ? 'Online' : 'Offline'}
+                      </p>
                     </div>
                   </Link>
                   <div className="flex items-center gap-2">
-                    <Link
-                      to={`/freunde/${f.id}`}
-                      aria-label={`Profil von ${f.displayName}`}
-                      className="flex h-8 w-8 items-center justify-center text-(--color-text-secondary)"
+                    <button
+                      onClick={() => onSetNickname(f)}
+                      className="rounded-lg border border-(--color-border) px-3 py-1.5 text-xs font-semibold text-(--color-text-secondary)"
                     >
-                      <Icon name="chevron-right" size={18} />
-                    </Link>
+                      Spitzname
+                    </button>
                     <button
                       onClick={() => onRemove(f.id)}
                       className="rounded-lg border border-(--color-border) px-3 py-1.5 text-xs font-semibold text-(--color-text-secondary)"

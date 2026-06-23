@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { PageHeader } from '../components/PageHeader';
 import { Icon } from '../components/Icon';
 import { RideTrackMap, RideStatCard } from '../components/RideTrackMap';
@@ -10,7 +10,9 @@ import type { Ride } from '../lib/types';
 
 export function RideDetail() {
   const { id } = useParams();
+  const navigate = useNavigate();
   const [ride, setRide] = useState<Ride | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
   const [error, setError] = useState(false);
   const [shareToken, setShareToken] = useState<string | null>(null);
   const [shareBusy, setShareBusy] = useState(false);
@@ -60,6 +62,18 @@ export function RideDetail() {
       setShareToken(null);
     } finally {
       setShareBusy(false);
+    }
+  }
+
+  async function handleDelete() {
+    if (!confirm('Diese Fahrt wirklich löschen?')) return;
+    setDeleteBusy(true);
+    try {
+      await api.del(`/rides/${id}`);
+      navigate('/statistik');
+    } catch {
+      setError(true);
+      setDeleteBusy(false);
     }
   }
 
@@ -120,6 +134,14 @@ export function RideDetail() {
                 <Icon name="download" size={18} /> Als GPX exportieren
               </button>
             )}
+
+            <button
+              onClick={handleDelete}
+              disabled={deleteBusy}
+              className="flex items-center justify-center gap-2 rounded-xl border border-(--color-danger) py-3 text-base font-semibold text-(--color-danger) transition active:scale-[0.98] disabled:opacity-50"
+            >
+              <Icon name="trash" size={18} /> Fahrt löschen
+            </button>
           </div>
         </div>
       )}

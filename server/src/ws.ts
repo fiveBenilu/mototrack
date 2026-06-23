@@ -3,6 +3,47 @@ import type { Server } from 'http';
 import jwt from 'jsonwebtoken';
 import { config } from './config';
 import { db } from './db';
+import { sendPushToUser } from './push';
+import { friendOnline, friendStartedRide } from './notifications';
+
+// Push-Entprellung: nicht bei jedem Reconnect/Refresh erneut benachrichtigen.
+const NOTIFY_COOLDOWN_MS = 30 * 60 * 1000;
+const lastOnlineNotify = new Map<number, number>();
+const lastRideNotify = new Map<number, number>();
+const getDisplayName = db.prepare('SELECT display_name FROM users WHERE id = ?');
+const getShareFlag = db.prepare('SELECT share_activity FROM users WHERE id = ?');
+const getNickname = db.prepare('SELECT nickname FROM friend_nicknames WHERE owner_id = ? AND friend_id = ?');
+
+function displayName(userId: number): string {
+  return (getDisplayName.get(userId) as { display_name?: string } | undefined)?.display_name ?? 'Jemand';
+}
+
+/** Sendet dieser Nutzer Aktivitäts-Pushes an Freunde, oder fährt er „anonym"? */
+export function sharesActivity(userId: number): boolean {
+  return (getShareFlag.get(userId) as { share_activity?: number } | undefined)?.share_activity !== 0;
+}
+
+/** Name, den `ownerId` für `actorId` sieht: eigener Spitzname, sonst Anzeigename. */
+export function resolveFriendName(ownerId: number, actorId: number): string {
+  const nick = (getNickname.get(ownerId, actorId) as { nickname?: string } | undefined)?.nickname;
+  return nick || displayName(actorId);
+}
+
+// Push an alle Freunde, sofern der Cooldown abgelaufen ist (verhindert Spam) und
+// der Nutzer seine Aktivität teilt. Name pro Empfänger (deren Spitzname für uns).
+function notifyFriendsThrottled(
+  userId: number,
+  cooldown: Map<number, number>,
+  build: (name: string, id: number) => Parameters<typeof sendPushToUser>[1],
+) {
+  if (!sharesActivity(userId)) return;
+  const now = Date.now();
+  if (now - (cooldown.get(userId) ?? 0) < NOTIFY_COOLDOWN_MS) return;
+  cooldown.set(userId, now);
+  for (const friendId of getFriendIds(userId)) {
+    void sendPushToUser(friendId, build(resolveFriendName(friendId, userId), userId));
+  }
+}
 
 interface LiveLocation {
   lat: number;
@@ -14,7 +55,7 @@ interface LiveLocation {
 const connections = new Map<number, Set<WebSocket>>();
 export const liveLocations = new Map<number, LiveLocation>();
 
-function getFriendIds(userId: number): number[] {
+export function getFriendIds(userId: number): number[] {
   const rows = db
     .prepare(
       `SELECT friend_id as id FROM friendships WHERE user_id = ? AND status = 'accepted'
@@ -66,10 +107,13 @@ export function setupWebSocket(server: Server) {
     }
 
     const uid = userId;
+    const wasOffline = (connections.get(uid)?.size ?? 0) === 0;
     if (!connections.has(uid)) connections.set(uid, new Set());
     connections.get(uid)!.add(ws);
 
     broadcastToFriends(uid, { type: 'presence', userId: uid, online: true });
+    // Nur beim echten Offline→Online-Wechsel pushen (nicht beim 2. Gerät).
+    if (wasOffline) notifyFriendsThrottled(uid, lastOnlineNotify, friendOnline);
 
     // Bereits bekannte Standorte von Freunden direkt nach Verbindungsaufbau senden
     for (const friendId of getFriendIds(uid)) {
@@ -85,6 +129,7 @@ export function setupWebSocket(server: Server) {
         return;
       }
       if (msg?.type === 'location' && typeof msg.lat === 'number' && typeof msg.lng === 'number') {
+        const startedRiding = !liveLocations.has(uid); // erste Position dieser Session
         const loc: LiveLocation = {
           lat: msg.lat,
           lng: msg.lng,
@@ -92,6 +137,7 @@ export function setupWebSocket(server: Server) {
           ts: Date.now(),
         };
         liveLocations.set(uid, loc);
+        if (startedRiding) notifyFriendsThrottled(uid, lastRideNotify, friendStartedRide);
         broadcastToFriends(uid, { type: 'friend-location', userId: uid, ...loc });
       } else if (msg?.type === 'stop-sharing') {
         liveLocations.delete(uid);

@@ -35,6 +35,7 @@ export function publicUser(u: any) {
     friendCode: u.friend_code,
     themePref: u.theme_pref,
     isAdmin: !!u.is_admin,
+    shareActivity: u.share_activity !== 0,
   };
 }
 
