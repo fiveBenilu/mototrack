@@ -7,7 +7,8 @@
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
     "build": "tsc -p tsconfig.json && mkdir -p dist/db && cp src/db/schema.sql dist/db/schema.sql",
     "start": "node dist/index.js",
-    "admin": "node scripts/admin.mjs"
+    "admin": "node scripts/admin.mjs",
+    "test": "for f in $(find src -name '*.test.ts'); do DB_PATH=\"$(mktemp -u).db\" tsx \"$f\" || exit 1; done"
   },
   "keywords": [],
   "author": "",

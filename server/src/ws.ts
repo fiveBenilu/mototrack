@@ -128,7 +128,11 @@ export function setupWebSocket(server: Server) {
       } catch {
         return;
       }
-      if (msg?.type === 'location' && typeof msg.lat === 'number' && typeof msg.lng === 'number') {
+      if (
+        msg?.type === 'location' &&
+        Number.isFinite(msg.lat) && msg.lat >= -90 && msg.lat <= 90 &&
+        Number.isFinite(msg.lng) && msg.lng >= -180 && msg.lng <= 180
+      ) {
         const startedRiding = !liveLocations.has(uid); // erste Position dieser Session
         const loc: LiveLocation = {
           lat: msg.lat,

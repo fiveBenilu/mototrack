@@ -325,8 +325,24 @@ function FriendPopup({
  * eigenen Standort zugleich an Freunde sendet). Wird auf der Karten-Seite und im
  * Konvoi-Modus der Aufzeichnung verwendet.
  */
+const ROUTE_COLOR = '#0a84ff';
+const STEP_REACHED_M = 30; // Manöverpunkt als erreicht werten
+const ANNOUNCE_RANGE_M = 250; // ab hier die nächste Anweisung ansagen
+
+// Sprachausgabe der nächsten Abbiege-Anweisung (best effort, ohne Abhängigkeit).
+function speak(text: string) {
+  try {
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = 'de-DE';
+    window.speechSynthesis.cancel();
+    window.speechSynthesis.speak(u);
+  } catch {
+    /* Sprachausgabe optional */
+  }
+}
+
 export function LiveMap({ className, lockView = false }: { className?: string; lockView?: boolean }) {
-  const { cameras, zones, friendLocations, myLocation, lastPass, dismissLastPass, lastZonePass, dismissLastZonePass, activeZoneProgress } =
+  const { cameras, zones, friendLocations, myLocation, lastPass, dismissLastPass, lastZonePass, dismissLastZonePass, activeZoneProgress, activeRoute } =
     useRide();
   const { resolved } = useTheme();
   const [follow, setFollow] = useState(true);
@@ -379,6 +395,42 @@ export function LiveMap({ className, lockView = false }: { className?: string; l
     return best;
   }, [cameras, position, heading]);
 
+  // Turn-by-turn entlang der aktiven Route: Index zeigt auf das nächste Manöver,
+  // rückt nur vorwärts (sobald der aktuelle Manöverpunkt erreicht ist). Distanz
+  // & Anweisung werden für die Einblendung berechnet, plus einmalige Ansage.
+  const stepIdxRef = useRef(0);
+  const announcedRef = useRef(-1);
+  const [nav, setNav] = useState<{ instruction: string; distanceM: number; final: boolean } | null>(null);
+
+  useEffect(() => {
+    stepIdxRef.current = 0;
+    announcedRef.current = -1;
+    setNav(null);
+  }, [activeRoute?.id]);
+
+  useEffect(() => {
+    const steps = activeRoute?.steps;
+    if (!steps || steps.length === 0 || !position) {
+      setNav(null);
+      return;
+    }
+    let idx = stepIdxRef.current;
+    // Erreichte Manöver überspringen (Index nur vorwärts).
+    while (idx < steps.length - 1 && haversineDistance(position.lat, position.lng, steps[idx].lat, steps[idx].lng) < STEP_REACHED_M) {
+      idx++;
+    }
+    stepIdxRef.current = idx;
+    const step = steps[idx];
+    const dist = haversineDistance(position.lat, position.lng, step.lat, step.lng);
+    const final = idx === steps.length - 1;
+    setNav({ instruction: step.instruction, distanceM: dist, final });
+
+    if (dist <= ANNOUNCE_RANGE_M && announcedRef.current !== idx) {
+      announcedRef.current = idx;
+      speak(dist > 60 ? `In ${Math.round(dist / 10) * 10} Metern: ${step.instruction}` : step.instruction);
+    }
+  }, [activeRoute, position]);
+
   return (
     // `lockView` (HUD in der Aufzeichnung): Leaflet darf die Touch-Geste nicht
     // abfangen, sonst lässt sich nicht zur nächsten Pager-Seite wischen. Karte
@@ -415,6 +467,14 @@ export function LiveMap({ className, lockView = false }: { className?: string; l
           <Marker position={[position.lat, position.lng]} icon={selfMarkerIcon}>
             <Popup>Du bist hier</Popup>
           </Marker>
+        )}
+
+        {/* Aktive geführte Route */}
+        {activeRoute && activeRoute.geometry.length > 1 && (
+          <Polyline
+            positions={activeRoute.geometry}
+            pathOptions={{ color: ROUTE_COLOR, weight: 6, opacity: 0.8, lineCap: 'round', lineJoin: 'round' }}
+          />
         )}
 
         {/* Blitzer-Zonen: hervorgehobener Straßenabschnitt + Tore an Ein-/Ausfahrt */}
@@ -494,6 +554,17 @@ export function LiveMap({ className, lockView = false }: { className?: string; l
         >
           <Icon name="camera" size={16} className="text-(--color-danger)" />
           <span className="text-sm font-semibold tabular-nums">Blitzer in {fmtMeters(cameraAhead)}</span>
+        </div>
+      )}
+
+      {/* Turn-by-turn-Anweisung der aktiven Route (oben Mitte). */}
+      {nav && (
+        <div className="pointer-events-none absolute left-1/2 top-3 z-[1000] flex -translate-x-1/2 items-center gap-3 rounded-2xl px-4 py-2.5 text-white shadow-lg" style={{ background: ROUTE_COLOR }}>
+          <Icon name={nav.final ? 'flag' : 'chevron-right'} size={26} />
+          <div className="leading-tight">
+            <p className="text-2xl font-bold tabular-nums">{nav.final && nav.distanceM < STEP_REACHED_M ? 'Ziel' : fmtMeters(nav.distanceM)}</p>
+            <p className="text-sm font-medium">{nav.instruction}</p>
+          </div>
         </div>
       )}
 

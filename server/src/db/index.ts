@@ -2,6 +2,14 @@ import Database from 'better-sqlite3';
 import fs from 'fs';
 import path from 'path';
 
+// Sicherung: Ein `*.test.ts`-Einstieg darf NIE die echte DB anfassen. Das
+// in den Tests gesetzte `process.env.DB_PATH` greift wegen Import-Hoisting erst
+// NACH diesem Modul – ohne DB_PATH im Env würde sonst die Produktiv-DB
+// überschrieben. Lieber laut abbrechen.
+if (!process.env.DB_PATH && process.argv.some((a) => a.includes('.test.'))) {
+  throw new Error('Tests müssen DB_PATH auf einen Wegwerf-Pfad setzen (niemals die echte DB).');
+}
+
 // DB-Pfad per Env überschreibbar (z. B. für isolierte Tests), sonst Standard ../../data.
 export const dbPath = process.env.DB_PATH || path.join(__dirname, '../../data', 'mototrack.db');
 const dataDir = path.dirname(dbPath);

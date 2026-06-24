@@ -116,5 +116,6 @@ Danach ist die App unter `https://mototrack.deine-domain.de` erreichbar – inkl
 - **Home**: Schnellzugriff, letzte Fahrt, online Freunde
 - **Fahren**: Sensor-Permissions, Kalibrierung der Schräglage-Nullposition, Live-Aufzeichnung (Speed, Schräglage, Distanz, Dauer)
 - **Karte**: OSM-Karte mit deterministisch generierten "Blitzern" (Speed-Traps), Punkte & Sterne bei Durchfahrt, Live-Standorte von Freunden
+- **Routen**: Touren mit Wegpunkten auf der Karte planen (OSRM-Routing), als Profilkarte mit Strecke & ca. Fahrzeit speichern und mit Freunden teilen. Freie Fahrt (nur Punkte sammeln) vs. geführte Fahrt mit Route auf der Karte und Turn-by-turn-Anweisungen. Gruppen können eine gemeinsame Route festlegen, der alle Mitglieder folgen.
 - **Statistik**: Bestwerte, Verlaufs-Charts, Kurven-Bewertungen (Bronze/Silber/Gold/Platin nach Schräglage), Freundes-Vergleich
 - **Einstellungen**: Profil (Name, Profilbild), Passwort ändern, Freunde verwalten (Freunde-Code, Anfragen), Theme (Auto/Hell/Dunkel)

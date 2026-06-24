@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "for f in $(find src -name '*.test.ts'); do tsx \"$f\" || exit 1; done"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.0",

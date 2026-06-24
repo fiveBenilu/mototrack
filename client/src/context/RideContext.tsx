@@ -4,7 +4,9 @@ import { useAuth } from './AuthContext';
 import { api } from '../lib/api';
 import { flushPendingRides } from '../lib/pendingRides';
 import { haversineDistance } from '../lib/geo';
-import type { SpeedCamera, SpeedZone, FriendLocation } from '../lib/types';
+import type { SpeedCamera, SpeedZone, FriendLocation, PlannedRoute } from '../lib/types';
+
+const ACTIVE_ROUTE_KEY = 'mototrack.activeRoute';
 
 const CAMERA_PASS_RADIUS_M = 75;
 const ZONE_TRIGGER_RADIUS_M = 80; // Nähe zu Ein-/Ausfahrt, um die Messung zu starten/beenden (großzügig, da GPS bei High-Speed nur ~1 Punkt/s liefert)
@@ -51,7 +53,8 @@ export interface MyLocation {
 export type GroupEvent =
   | { type: 'group-message'; groupId: number; message: import('../lib/types').GroupMessage }
   | { type: 'group-update'; groupId: number }
-  | { type: 'group-removed'; groupId: number };
+  | { type: 'group-removed'; groupId: number }
+  | { type: 'group-route'; groupId: number; routeId: number | null };
 
 interface RideContextValue extends ReturnType<typeof useRideRecorder> {
   cameras: SpeedCamera[];
@@ -65,6 +68,8 @@ interface RideContextValue extends ReturnType<typeof useRideRecorder> {
   dismissLastZonePass: () => void;
   activeZoneProgress: ZoneProgress | null;
   subscribeGroupEvents: (cb: (event: GroupEvent) => void) => () => void;
+  activeRoute: PlannedRoute | null;
+  setActiveRoute: (route: PlannedRoute | null) => void;
 }
 
 const RideContext = createContext<RideContextValue | undefined>(undefined);
@@ -78,6 +83,15 @@ export function RideProvider({ children }: { children: ReactNode }) {
   const [lastPass, setLastPass] = useState<CameraPassResult | null>(null);
   const [lastZonePass, setLastZonePass] = useState<ZonePassResult | null>(null);
   const [activeZoneProgress, setActiveZoneProgress] = useState<ZoneProgress | null>(null);
+  // Aktive geführte Route (überlebt Tab-Wechsel/Reload via localStorage).
+  const [activeRoute, setActiveRouteState] = useState<PlannedRoute | null>(() => {
+    try {
+      const raw = localStorage.getItem(ACTIVE_ROUTE_KEY);
+      return raw ? (JSON.parse(raw) as PlannedRoute) : null;
+    } catch {
+      return null;
+    }
+  });
 
   const camerasRef = useRef<SpeedCamera[]>([]);
   const zonesRef = useRef<SpeedZone[]>([]);
@@ -378,6 +392,16 @@ export function RideProvider({ children }: { children: ReactNode }) {
   const dismissLastPass = useCallback(() => setLastPass(null), []);
   const dismissLastZonePass = useCallback(() => setLastZonePass(null), []);
 
+  const setActiveRoute = useCallback((route: PlannedRoute | null) => {
+    setActiveRouteState(route);
+    try {
+      if (route) localStorage.setItem(ACTIVE_ROUTE_KEY, JSON.stringify(route));
+      else localStorage.removeItem(ACTIVE_ROUTE_KEY);
+    } catch {
+      /* localStorage optional */
+    }
+  }, []);
+
   const value: RideContextValue = {
     ...recorder,
     start: wrappedStart,
@@ -392,6 +416,8 @@ export function RideProvider({ children }: { children: ReactNode }) {
     dismissLastZonePass,
     activeZoneProgress,
     subscribeGroupEvents,
+    activeRoute,
+    setActiveRoute,
   };
 
   return <RideContext.Provider value={value}>{children}</RideContext.Provider>;

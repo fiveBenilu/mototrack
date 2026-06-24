@@ -5,7 +5,8 @@ import { Icon } from '../components/Icon';
 import { useRide } from '../context/RideContext';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../lib/api';
-import type { Friend, GroupDetail as GroupDetailType, GroupMessage } from '../lib/types';
+import { formatDistance, formatDuration } from '../lib/geo';
+import type { Friend, GroupDetail as GroupDetailType, GroupMessage, PlannedRoute } from '../lib/types';
 
 export function GroupDetail() {
   const { id } = useParams();
@@ -15,6 +16,7 @@ export function GroupDetail() {
   const { subscribeGroupEvents } = useRide();
 
   const [group, setGroup] = useState<GroupDetailType | null>(null);
+  const [showRide, setShowRide] = useState(false);
   const [messages, setMessages] = useState<GroupMessage[]>([]);
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
@@ -53,7 +55,7 @@ export function GroupDetail() {
         if (event.groupId !== groupId) return;
         if (event.type === 'group-message') {
           setMessages((prev) => (prev.some((m) => m.id === event.message.id) ? prev : [...prev, event.message]));
-        } else if (event.type === 'group-update') {
+        } else if (event.type === 'group-update' || event.type === 'group-route') {
           loadGroup();
         } else if (event.type === 'group-removed') {
           navigate('/gruppen', { replace: true });
@@ -116,6 +118,21 @@ export function GroupDetail() {
         {showMembers && group && (
           <MemberPanel group={group} isOwner={!!isOwner} selfId={user?.id ?? -1} onChanged={loadGroup} />
         )}
+      </div>
+
+      {/* Gruppenfahrt: gemeinsame Route wählen und ihr folgen */}
+      <div className="shrink-0 border-b border-(--color-border) px-4 py-2">
+        <button
+          onClick={() => setShowRide((v) => !v)}
+          className="flex w-full items-center justify-between text-sm font-medium text-(--color-text-secondary)"
+        >
+          <span className="flex items-center gap-1.5">
+            <Icon name="map" size={16} /> Gruppenfahrt
+            {group?.activeRouteId && <span className="h-2 w-2 rounded-full bg-(--color-accent)" />}
+          </span>
+          <Icon name={showRide ? 'chevron-left' : 'chevron-right'} size={16} />
+        </button>
+        {showRide && group && <GroupRidePanel group={group} onChanged={loadGroup} />}
       </div>
 
       {/* Nachrichten */}
@@ -306,6 +323,94 @@ function MemberPanel({
           </button>
         )}
       </div>
+    </div>
+  );
+}
+
+function GroupRidePanel({ group, onChanged }: { group: GroupDetailType; onChanged: () => void }) {
+  const navigate = useNavigate();
+  const { setActiveRoute } = useRide();
+  const [routes, setRoutes] = useState<PlannedRoute[]>([]);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    api
+      .get<{ routes: PlannedRoute[] }>('/routes')
+      .then((d) => setRoutes(d.routes))
+      .catch(() => {});
+  }, []);
+
+  const active = routes.find((r) => r.id === group.activeRouteId) ?? null;
+
+  async function setRoute(routeId: number | null) {
+    setBusy(true);
+    try {
+      await api.put(`/groups/${group.id}/route`, { routeId });
+      onChanged();
+    } catch {
+      /* ignore */
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function startRide() {
+    if (!active) return;
+    setActiveRoute(active);
+    navigate('/fahren');
+  }
+
+  return (
+    <div className="mt-2 flex flex-col gap-2">
+      {active ? (
+        <div className="rounded-xl border border-(--color-accent) p-3">
+          <p className="text-sm font-semibold">{active.name}</p>
+          <p className="mb-2 text-xs text-(--color-text-secondary)">
+            {formatDistance(active.distanceM)} · ca. {formatDuration(active.durationS)}
+          </p>
+          <div className="flex gap-2">
+            <button
+              onClick={startRide}
+              className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-(--color-accent) py-2 text-sm font-semibold text-white transition active:scale-[0.98]"
+            >
+              <Icon name="motorcycle" size={16} /> Gruppenfahrt starten
+            </button>
+            <button
+              onClick={() => setRoute(null)}
+              disabled={busy}
+              className="rounded-lg border border-(--color-border) px-3 py-2 text-sm font-medium text-(--color-text-secondary)"
+            >
+              Aufheben
+            </button>
+          </div>
+        </div>
+      ) : (
+        <p className="text-xs text-(--color-text-secondary)">
+          Wähle eine Route als gemeinsames Ziel. Alle Mitglieder können ihr dann mit Navigation folgen.
+        </p>
+      )}
+
+      {routes.length === 0 ? (
+        <p className="px-1 text-xs text-(--color-text-secondary)">
+          Noch keine Routen – plane eine unter „Routen".
+        </p>
+      ) : (
+        <div className="flex flex-col gap-1">
+          {routes
+            .filter((r) => r.id !== group.activeRouteId)
+            .map((r) => (
+              <button
+                key={r.id}
+                onClick={() => setRoute(r.id)}
+                disabled={busy}
+                className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm transition hover:bg-(--color-bg)"
+              >
+                <span className="truncate">{r.name}</span>
+                <span className="shrink-0 text-xs text-(--color-text-secondary)">{formatDistance(r.distanceM)}</span>
+              </button>
+            ))}
+        </div>
+      )}
     </div>
   );
 }

@@ -13,7 +13,8 @@
       "Bash(sudo -n systemctl restart mototrack)",
       "Bash(node -e \"const D=require\\('better-sqlite3'\\);const db=new D\\('server/data/mototrack.db'\\);console.log\\(db.prepare\\('SELECT id,username,display_name,created_at FROM users'\\).all\\(\\)\\); console.log\\('groups table exists:', db.prepare\\(\\\\\"SELECT name FROM sqlite_master WHERE type='table' AND name='ride_groups'\\\\\"\\).all\\(\\)\\);\")",
       "Bash(ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -T git@github.com)",
-      "Bash(ssh-add -l)"
+      "Bash(ssh-add -l)",
+      "Bash(echo \"exit: $?\")"
     ]
   }
 }

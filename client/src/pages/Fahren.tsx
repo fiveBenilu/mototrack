@@ -241,6 +241,30 @@ export function Fahren() {
       <PageHeader title="Fahren" subtitle="Sensoren aktivieren, kalibrieren, los geht's" />
       <div className="flex flex-col gap-4 p-5">
         <SafetyNote />
+
+        {recorder.activeRoute ? (
+          <section className="ios-card border border-(--color-accent) p-4">
+            <p className="mb-1 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-(--color-accent)">
+              <Icon name="map" size={14} /> Geführte Fahrt
+            </p>
+            <h2 className="text-base font-semibold">{recorder.activeRoute.name}</h2>
+            <p className="mb-3 text-sm text-(--color-text-secondary)">
+              {formatDistance(recorder.activeRoute.distanceM)} · ca. {formatDuration(recorder.activeRoute.durationS)} · Route
+              & Navigation auf der Karte
+            </p>
+            <button
+              onClick={() => recorder.setActiveRoute(null)}
+              className="flex items-center gap-1.5 rounded-lg border border-(--color-border) px-3 py-1.5 text-sm font-medium transition active:scale-[0.98]"
+            >
+              <Icon name="x" size={15} /> Route entfernen (freie Fahrt)
+            </button>
+          </section>
+        ) : (
+          <p className="text-sm text-(--color-text-secondary)">
+            Freie Fahrt – einfach losfahren und Blitzer-Punkte sammeln. Für eine geführte Tour wähle unter „Routen" eine
+            Route aus.
+          </p>
+        )}
         {draft && (
           <section className="ios-card border border-(--color-accent) p-4">
             <h2 className="mb-1 flex items-center gap-1.5 text-base font-semibold">
@@ -321,7 +345,8 @@ export function Fahren() {
           disabled={!permissionsGranted}
           className="flex items-center justify-center gap-2 rounded-xl bg-(--color-accent) py-4 text-lg font-bold text-white shadow-lg transition active:scale-[0.98] disabled:opacity-40"
         >
-          <Icon name="motorcycle" size={24} strokeWidth={1.8} /> Aufzeichnung starten
+          <Icon name="motorcycle" size={24} strokeWidth={1.8} />{' '}
+          {recorder.activeRoute ? 'Geführte Fahrt starten' : 'Aufzeichnung starten'}
         </button>
       </div>
     </div>

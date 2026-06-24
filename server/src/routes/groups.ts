@@ -127,9 +127,45 @@ function groupDetail(groupId: number) {
     name: g.name,
     ownerId: g.owner_id,
     createdAt: g.created_at,
+    activeRouteId: g.active_route_id ?? null,
     members: members.map(publicMember),
   };
 }
+
+// Aktive Gruppen-Route setzen/entfernen. Jedes Mitglied darf eine Route wählen,
+// auf die es Zugriff hat; sie wird automatisch mit allen Mitgliedern geteilt,
+// damit jeder sie laden und ihr folgen kann.
+groupsRouter.put('/:id/route', requireAuth, (req: AuthedRequest, res) => {
+  const groupId = Number(req.params.id);
+  const userId = req.userId!;
+  if (!isMember(groupId, userId)) return res.status(404).json({ error: 'Gruppe nicht gefunden' });
+
+  const raw = req.body?.routeId;
+  if (raw === null) {
+    db.prepare('UPDATE ride_groups SET active_route_id = NULL WHERE id = ?').run(groupId);
+    broadcastToUsers(memberIds(groupId), { type: 'group-route', groupId, routeId: null });
+    return res.json({ group: groupDetail(groupId) });
+  }
+
+  const routeId = Number(raw);
+  if (!Number.isInteger(routeId)) return res.status(400).json({ error: 'Ungültige Routen-ID' });
+  const route = db.prepare('SELECT owner_id FROM routes WHERE id = ?').get(routeId) as { owner_id: number } | undefined;
+  if (!route) return res.status(404).json({ error: 'Route nicht gefunden' });
+  const hasAccess =
+    route.owner_id === userId ||
+    !!db.prepare('SELECT 1 FROM route_shares WHERE route_id = ? AND user_id = ?').get(routeId, userId);
+  if (!hasAccess) return res.status(403).json({ error: 'Kein Zugriff auf diese Route' });
+
+  const apply = db.transaction(() => {
+    db.prepare('UPDATE ride_groups SET active_route_id = ? WHERE id = ?').run(routeId, groupId);
+    const share = db.prepare('INSERT OR IGNORE INTO route_shares (route_id, user_id) VALUES (?, ?)');
+    for (const mid of memberIds(groupId)) if (mid !== route.owner_id) share.run(routeId, mid);
+  });
+  apply();
+
+  broadcastToUsers(memberIds(groupId), { type: 'group-route', groupId, routeId });
+  res.json({ group: groupDetail(groupId) });
+});
 
 // Gruppendetails (nur für Mitglieder).
 groupsRouter.get('/:id', requireAuth, (req: AuthedRequest, res) => {

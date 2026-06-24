@@ -12,6 +12,7 @@ import { friendsRouter } from './routes/friends';
 import { usersRouter } from './routes/users';
 import { statsRouter } from './routes/stats';
 import { groupsRouter } from './routes/groups';
+import { routesRouter } from './routes/routes';
 import { pushRouter } from './routes/push';
 import { adminRouter } from './routes/admin';
 import { setupWebSocket } from './ws';
@@ -19,6 +20,18 @@ import './db';
 
 const app = express();
 app.set('trust proxy', 1);
+
+// Basis-Sicherheitsheader (ohne helmet-Abhängigkeit): Clickjacking unterbinden,
+// MIME-Sniffing aus, Referer sparsam. HSTS nur in Produktion (hinter HTTPS).
+app.use((_req, res, next) => {
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  if (config.isProd) {
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  }
+  next();
+});
 
 // Standardlimit von express.json() ist 100 KB – zu wenig für lange Fahrten:
 // Der Recorder erfasst ~1 Trackpunkt/Sekunde, eine 30-Minuten-Fahrt sind also
@@ -35,6 +48,7 @@ app.use('/api/friends', friendsRouter);
 app.use('/api/users', usersRouter);
 app.use('/api/stats', statsRouter);
 app.use('/api/groups', groupsRouter);
+app.use('/api/routes', routesRouter);
 app.use('/api/push', pushRouter);
 app.use('/api/admin', adminRouter);
 

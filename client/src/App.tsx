@@ -16,6 +16,7 @@ import { Einstellungen } from './pages/Einstellungen';
 import { Freunde } from './pages/Freunde';
 import { FriendProfile } from './pages/FriendProfile';
 import { Groups } from './pages/Groups';
+import { Routen } from './pages/Routen';
 import { GroupDetail } from './pages/GroupDetail';
 import { PublicRide } from './pages/PublicRide';
 import { Admin } from './pages/Admin';
@@ -82,6 +83,7 @@ function AppShell() {
           <Route path="/" element={<Home />} />
           <Route path="/fahren" element={<Fahren />} />
           <Route path="/karte" element={<MapPage />} />
+          <Route path="/routen" element={<Routen />} />
           <Route path="/statistik" element={<Statistik />} />
           <Route path="/fahrten/:id" element={<RideDetail />} />
           <Route path="/einstellungen" element={<Einstellungen />} />

@@ -5,6 +5,7 @@ const tabs = [
   { to: '/', label: 'Home', icon: HomeIcon },
   { to: '/fahren', label: 'Fahren', icon: RideIcon },
   { to: '/karte', label: 'Karte', icon: MapIcon },
+  { to: '/routen', label: 'Routen', icon: RouteIcon },
   { to: '/statistik', label: 'Statistik', icon: ChartIcon },
   { to: '/freunde', label: 'Freunde', icon: FriendsIcon },
   { to: '/einstellungen', label: 'Mehr', icon: GearIcon },
@@ -72,6 +73,16 @@ function MapIcon({ active }: IconProps) {
       <path d="M9 4 3 6.5v13L9 17l6 2.5 6-2.5v-13L15 6.5 9 4Z" />
       <path d="M9 4v13" />
       <path d="M15 6.5v13" />
+    </svg>
+  );
+}
+
+function RouteIcon({ active }: IconProps) {
+  return (
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={active ? 2.2 : 1.8} strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="6" cy="19" r="2.5" />
+      <circle cx="18" cy="5" r="2.5" />
+      <path d="M8.5 19H14a3.5 3.5 0 0 0 0-7h-4a3.5 3.5 0 0 1 0-7h5.5" />
     </svg>
   );
 }
