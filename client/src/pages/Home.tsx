@@ -207,10 +207,10 @@ export function Home() {
 
         {/* Schnellzugriff */}
         <div className="grid grid-cols-2 gap-3">
-          <QuickTile to="/karte" icon="map" label="Karte" hint="Blitzer & Freunde live" />
-          <QuickTile to="/routen" icon="flag" label="Routen" hint="Touren planen" />
-          <QuickTile to="/gruppen" icon="users" label="Gruppen" hint="Gemeinsam fahren" />
           <QuickTile to="/statistik" icon="chart" label="Statistik" hint="Bestwerte & Verlauf" />
+          <QuickTile to="/freunde" icon="users" label="Freunde" hint="Anfragen & Profile" />
+          <QuickTile to="/gruppen" icon="users" label="Gruppen" hint="Gemeinsam fahren" />
+          <QuickTile to="/routen" icon="flag" label="Routen" hint="Touren planen" />
         </div>
       </div>
     </div>

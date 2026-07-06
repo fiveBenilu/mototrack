@@ -55,6 +55,13 @@ db.exec(
   'CREATE UNIQUE INDEX IF NOT EXISTS idx_rides_share_token ON rides(share_token) WHERE share_token IS NOT NULL',
 );
 
+// Migration: Routing-Profil (schnell/kurvig) pro Route – für erneutes Routing
+// beim Bearbeiten mit demselben Profil.
+const routeCols = db.prepare(`PRAGMA table_info(routes)`).all() as { name: string }[];
+if (!routeCols.some((c) => c.name === 'profile')) {
+  db.exec("ALTER TABLE routes ADD COLUMN profile TEXT NOT NULL DEFAULT 'fast'");
+}
+
 // Migration: aktive Gruppen-Route (für gemeinsame geführte Ausfahrten).
 const groupCols = db.prepare(`PRAGMA table_info(ride_groups)`).all() as { name: string }[];
 if (!groupCols.some((c) => c.name === 'active_route_id')) {

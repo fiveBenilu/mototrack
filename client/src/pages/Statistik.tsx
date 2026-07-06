@@ -44,7 +44,7 @@ export function Statistik() {
 
   return (
     <div className="pb-24">
-      <PageHeader title="Statistik" subtitle="Deine Bestwerte & Kurven-Bewertungen" />
+      <PageHeader title="Statistik" subtitle="Deine Bestwerte & Kurven-Bewertungen" backTo="/" />
       <div className="flex flex-col gap-4 p-5">
         {totals && (
           <div className="grid grid-cols-2 gap-3">

@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { db } from '../db';
 import { requireAuth, AuthedRequest } from '../middleware/auth';
-import { routeWaypoints } from '../lib/routing';
+import { routeWaypoints, generateRoundTrip, geocode, type RouteProfile } from '../lib/routing';
 
 export const routesRouter = Router();
 
@@ -30,12 +30,17 @@ function parseWaypoints(input: unknown): [number, number][] | null {
   return out;
 }
 
+function parseProfile(input: unknown): RouteProfile {
+  return input === 'curvy' ? 'curvy' : 'fast';
+}
+
 function publicRoute(r: any, ownerName?: string) {
   return {
     id: r.id,
     ownerId: r.owner_id,
     ownerName: ownerName ?? null,
     name: r.name,
+    profile: r.profile ?? 'fast',
     distanceM: r.distance_m,
     durationS: r.duration_s,
     waypoints: JSON.parse(r.waypoints),
@@ -57,10 +62,35 @@ routesRouter.post('/preview', requireAuth, async (req: AuthedRequest, res) => {
   const waypoints = parseWaypoints(req.body?.waypoints);
   if (!waypoints) return res.status(400).json({ error: 'Mindestens 2 gültige Wegpunkte nötig' });
   try {
-    const routed = await routeWaypoints(waypoints);
+    const routed = await routeWaypoints(waypoints, parseProfile(req.body?.profile));
     res.json(routed);
   } catch (e) {
     res.status(502).json({ error: e instanceof Error ? e.message : 'Routing fehlgeschlagen' });
+  }
+});
+
+// Rundtour generieren (calimoto-Stil): Startpunkt + Wunschdistanz → Schleife.
+routesRouter.post('/roundtrip', requireAuth, async (req: AuthedRequest, res) => {
+  const start = parseWaypoints([req.body?.start, req.body?.start]); // wiederverwendete Validierung
+  const distanceM = Number(req.body?.distanceM);
+  if (!start || !Number.isFinite(distanceM) || distanceM < 10_000 || distanceM > 500_000)
+    return res.status(400).json({ error: 'Startpunkt und Distanz (10–500 km) nötig' });
+  try {
+    const trip = await generateRoundTrip(start[0], distanceM, parseProfile(req.body?.profile ?? 'curvy'));
+    res.json(trip);
+  } catch (e) {
+    res.status(502).json({ error: e instanceof Error ? e.message : 'Rundtour fehlgeschlagen' });
+  }
+});
+
+// Ortssuche für Wegpunkte (Nominatim-Proxy).
+routesRouter.get('/geocode', requireAuth, async (req: AuthedRequest, res) => {
+  const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+  if (q.length < 2) return res.status(400).json({ error: 'Suchbegriff zu kurz' });
+  try {
+    res.json({ results: await geocode(q) });
+  } catch (e) {
+    res.status(502).json({ error: e instanceof Error ? e.message : 'Suche fehlgeschlagen' });
   }
 });
 
@@ -94,18 +124,19 @@ routesRouter.post('/', requireAuth, async (req: AuthedRequest, res) => {
   if (!name || name.length > MAX_NAME_LENGTH) return res.status(400).json({ error: 'Ungültiger Name' });
   const waypoints = parseWaypoints(req.body?.waypoints);
   if (!waypoints) return res.status(400).json({ error: 'Mindestens 2 gültige Wegpunkte nötig' });
+  const profile = parseProfile(req.body?.profile);
 
   let routed;
   try {
-    routed = await routeWaypoints(waypoints);
+    routed = await routeWaypoints(waypoints, profile);
   } catch (e) {
     return res.status(502).json({ error: e instanceof Error ? e.message : 'Routing fehlgeschlagen' });
   }
 
   const info = db
     .prepare(
-      `INSERT INTO routes (owner_id, name, distance_m, duration_s, waypoints, geometry, steps)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO routes (owner_id, name, distance_m, duration_s, waypoints, geometry, steps, profile)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
       req.userId,
@@ -115,6 +146,7 @@ routesRouter.post('/', requireAuth, async (req: AuthedRequest, res) => {
       JSON.stringify(waypoints),
       JSON.stringify(routed.geometry),
       JSON.stringify(routed.steps),
+      profile,
     );
   const r = db.prepare('SELECT * FROM routes WHERE id = ?').get(Number(info.lastInsertRowid));
   res.status(201).json({ route: publicRoute(r) });
@@ -131,16 +163,17 @@ routesRouter.put('/:id', requireAuth, async (req: AuthedRequest, res) => {
   if (!name || name.length > MAX_NAME_LENGTH) return res.status(400).json({ error: 'Ungültiger Name' });
   const waypoints = parseWaypoints(req.body?.waypoints);
   if (!waypoints) return res.status(400).json({ error: 'Mindestens 2 gültige Wegpunkte nötig' });
+  const profile = parseProfile(req.body?.profile ?? existing.profile);
 
   let routed;
   try {
-    routed = await routeWaypoints(waypoints);
+    routed = await routeWaypoints(waypoints, profile);
   } catch (e) {
     return res.status(502).json({ error: e instanceof Error ? e.message : 'Routing fehlgeschlagen' });
   }
 
   db.prepare(
-    `UPDATE routes SET name = ?, distance_m = ?, duration_s = ?, waypoints = ?, geometry = ?, steps = ? WHERE id = ?`,
+    `UPDATE routes SET name = ?, distance_m = ?, duration_s = ?, waypoints = ?, geometry = ?, steps = ?, profile = ? WHERE id = ?`,
   ).run(
     name,
     routed.distanceM,
@@ -148,6 +181,7 @@ routesRouter.put('/:id', requireAuth, async (req: AuthedRequest, res) => {
     JSON.stringify(waypoints),
     JSON.stringify(routed.geometry),
     JSON.stringify(routed.steps),
+    profile,
     id,
   );
   const r = db.prepare('SELECT * FROM routes WHERE id = ?').get(id);

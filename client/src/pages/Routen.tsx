@@ -9,7 +9,7 @@ import { useAuth } from '../context/AuthContext';
 import { api } from '../lib/api';
 import { formatDistance, formatDuration } from '../lib/geo';
 import { detectCurves, curveColor, curveTier } from '../lib/curves';
-import type { Friend, PlannedRoute, RoutePreview } from '../lib/types';
+import type { Friend, GeocodeResult, PlannedRoute, RoutePreview, RouteProfile } from '../lib/types';
 
 type View =
   | { mode: 'list' }
@@ -109,6 +109,7 @@ function RouteList({ onPlan, onView }: { onPlan: () => void; onView: (r: Planned
                     <span className="flex items-center gap-1.5">
                       <Icon name="clock" size={16} className="text-(--color-accent)" /> ca. {formatDuration(r.durationS)}
                     </span>
+                    <span className="text-(--color-text-secondary)">{r.profile === 'curvy' ? '🏍️ Kurvig' : '⚡ Schnell'}</span>
                   </div>
                 </button>
 
@@ -279,6 +280,7 @@ function RouteDetail({
           <span className="flex items-center gap-1.5">
             <Icon name="map" size={16} className="text-(--color-accent)" /> {route.waypoints.length} Wegpunkte
           </span>
+          <span className="text-(--color-text-secondary)">{route.profile === 'curvy' ? '🏍️ Kurvig' : '⚡ Schnell'}</span>
         </div>
 
         <div className="flex flex-wrap gap-2">
@@ -347,8 +349,12 @@ function RouteDetail({
   );
 }
 
+const ROUNDTRIP_KM = [50, 100, 150, 250];
+
 function Planner({ initial, onDone }: { initial?: PlannedRoute; onDone: () => void }) {
+  const { myLocation } = useRide();
   const [waypoints, setWaypoints] = useState<[number, number][]>(initial?.waypoints ?? []);
+  const [profile, setProfile] = useState<RouteProfile>(initial?.profile ?? 'curvy');
   const [preview, setPreview] = useState<RoutePreview | null>(
     initial ? { distanceM: initial.distanceM, durationS: initial.durationS, geometry: initial.geometry, steps: initial.steps } : null,
   );
@@ -356,11 +362,37 @@ function Planner({ initial, onDone }: { initial?: PlannedRoute; onDone: () => vo
   const [name, setName] = useState(initial?.name ?? '');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [focus, setFocus] = useState<[number, number] | null>(null);
+  const [roundtripKm, setRoundtripKm] = useState(100);
+  const [generating, setGenerating] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const skipRouteRef = useRef(false); // Rundtour liefert die Route schon mit
 
-  // Route bei jeder Wegpunkt-Änderung (entprellt) neu berechnen.
+  // Ortssuche (entprellt über /routes/geocode).
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState<GeocodeResult[]>([]);
+  useEffect(() => {
+    const q = query.trim();
+    if (q.length < 2) {
+      setResults([]);
+      return;
+    }
+    const t = setTimeout(() => {
+      api
+        .get<{ results: GeocodeResult[] }>(`/routes/geocode?q=${encodeURIComponent(q)}`)
+        .then((d) => setResults(d.results))
+        .catch(() => setResults([]));
+    }, 400);
+    return () => clearTimeout(t);
+  }, [query]);
+
+  // Route bei jeder Wegpunkt-/Profil-Änderung (entprellt) neu berechnen.
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (skipRouteRef.current) {
+      skipRouteRef.current = false;
+      return;
+    }
     if (waypoints.length < 2) {
       setPreview(null);
       return;
@@ -369,7 +401,7 @@ function Planner({ initial, onDone }: { initial?: PlannedRoute; onDone: () => vo
     setError(null);
     debounceRef.current = setTimeout(() => {
       api
-        .post<RoutePreview>('/routes/preview', { waypoints })
+        .post<RoutePreview>('/routes/preview', { waypoints, profile })
         .then(setPreview)
         .catch((e) => {
           setPreview(null);
@@ -380,19 +412,51 @@ function Planner({ initial, onDone }: { initial?: PlannedRoute; onDone: () => vo
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
-  }, [waypoints]);
+  }, [waypoints, profile]);
 
   const add = (p: [number, number]) => setWaypoints((prev) => [...prev, p]);
   const move = (i: number, p: [number, number]) => setWaypoints((prev) => prev.map((w, idx) => (idx === i ? p : w)));
   const remove = (i: number) => setWaypoints((prev) => prev.filter((_, idx) => idx !== i));
+
+  function addFromSearch(r: GeocodeResult) {
+    add([r.lat, r.lng]);
+    setFocus([r.lat, r.lng]);
+    setQuery('');
+    setResults([]);
+  }
+
+  async function generateRoundtrip() {
+    const start = waypoints[0] ?? (myLocation ? [myLocation.lat, myLocation.lng] : null);
+    if (!start) {
+      setError('Setze zuerst einen Startpunkt (Karte antippen oder Ort suchen).');
+      return;
+    }
+    setGenerating(true);
+    setError(null);
+    try {
+      const trip = await api.post<RoutePreview & { waypoints: [number, number][] }>('/routes/roundtrip', {
+        start,
+        distanceM: roundtripKm * 1000,
+        profile,
+      });
+      skipRouteRef.current = true; // kein erneutes Preview-Routing nötig
+      setWaypoints(trip.waypoints);
+      setPreview(trip);
+      setFocus([start[0], start[1]]);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Rundtour fehlgeschlagen');
+    } finally {
+      setGenerating(false);
+    }
+  }
 
   async function save() {
     if (!name.trim() || !preview) return;
     setSaving(true);
     setError(null);
     try {
-      if (initial) await api.put(`/routes/${initial.id}`, { name: name.trim(), waypoints });
-      else await api.post('/routes', { name: name.trim(), waypoints });
+      if (initial) await api.put(`/routes/${initial.id}`, { name: name.trim(), waypoints, profile });
+      else await api.post('/routes', { name: name.trim(), waypoints, profile });
       onDone();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Speichern fehlgeschlagen');
@@ -404,35 +468,108 @@ function Planner({ initial, onDone }: { initial?: PlannedRoute; onDone: () => vo
     <div className="flex h-[100dvh] flex-col">
       <PageHeader title={initial ? 'Route bearbeiten' : 'Route planen'} onBack={onDone} />
 
-      <RouteEditorMap
-        className="flex-1"
-        waypoints={waypoints}
-        geometry={preview?.geometry ?? []}
-        onAdd={add}
-        onMove={move}
-        onRemove={remove}
-      />
+      <div className="relative flex-1">
+        <RouteEditorMap
+          className="h-full"
+          waypoints={waypoints}
+          geometry={preview?.geometry ?? []}
+          focus={focus}
+          onAdd={add}
+          onMove={move}
+          onRemove={remove}
+        />
+
+        {/* Ortssuche schwebt über der Karte */}
+        <div className="absolute left-3 right-3 top-3 z-[1000]">
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Ort oder Adresse suchen…"
+            className="ios-card w-full px-4 py-2.5 text-sm outline-none"
+          />
+          {results.length > 0 && (
+            <ul className="ios-card mt-1 max-h-56 overflow-y-auto">
+              {results.map((r, i) => (
+                <li key={i}>
+                  <button
+                    onClick={() => addFromSearch(r)}
+                    className="w-full truncate px-4 py-2.5 text-left text-sm active:bg-(--color-bg)"
+                  >
+                    {r.name}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        {/* Rückgängig / Alles löschen */}
+        {waypoints.length > 0 && (
+          <div className="absolute bottom-3 right-3 z-[1000] flex gap-2">
+            <button
+              onClick={() => setWaypoints((prev) => prev.slice(0, -1))}
+              aria-label="Letzten Wegpunkt entfernen"
+              className="ios-card flex h-10 w-10 items-center justify-center"
+            >
+              <Icon name="chevron-left" size={20} />
+            </button>
+            <button
+              onClick={() => setWaypoints([])}
+              aria-label="Alle Wegpunkte löschen"
+              className="ios-card flex h-10 w-10 items-center justify-center text-(--color-danger)"
+            >
+              <Icon name="trash" size={18} />
+            </button>
+          </div>
+        )}
+      </div>
 
       <div className="safe-bottom mb-[60px] shrink-0 border-t border-(--color-border) bg-(--color-card) p-4">
-        <p className="mb-2 text-xs text-(--color-text-secondary)">
-          Tippe auf die Karte, um Wegpunkte zu setzen · Pin ziehen zum Verschieben · Pin antippen zum Entfernen
-        </p>
-
-        <div className="mb-3 flex items-center justify-between text-sm">
-          <span className="flex items-center gap-3">
-            <span className="flex items-center gap-1.5">
-              <Icon name="ruler" size={16} className="text-(--color-accent)" />
-              {preview ? formatDistance(preview.distanceM) : '–'}
-            </span>
-            <span className="flex items-center gap-1.5">
-              <Icon name="clock" size={16} className="text-(--color-accent)" />
-              {preview ? `ca. ${formatDuration(preview.durationS)}` : '–'}
-            </span>
-          </span>
-          <span className="text-(--color-text-secondary)">
-            {routing ? 'berechne…' : `${waypoints.length} Wegpunkte`}
-          </span>
+        {/* Routing-Profil wie bei calimoto: kurvig oder schnell */}
+        <div className="ios-segment mb-3">
+          <button aria-pressed={profile === 'curvy'} onClick={() => setProfile('curvy')}>
+            🏍️ Kurvig
+          </button>
+          <button aria-pressed={profile === 'fast'} onClick={() => setProfile('fast')}>
+            ⚡ Schnell
+          </button>
         </div>
+
+        {waypoints.length < 2 ? (
+          // Rundtour-Generator, solange noch keine Strecke gelegt ist.
+          <div className="mb-3 flex items-center gap-2">
+            <div className="ios-segment flex-1">
+              {ROUNDTRIP_KM.map((km) => (
+                <button key={km} aria-pressed={roundtripKm === km} onClick={() => setRoundtripKm(km)}>
+                  {km}
+                </button>
+              ))}
+            </div>
+            <button
+              onClick={generateRoundtrip}
+              disabled={generating}
+              className="rounded-xl bg-(--color-accent) px-4 py-2 text-sm font-semibold text-white transition active:scale-[0.98] disabled:opacity-50"
+            >
+              {generating ? '…' : 'Rundtour'}
+            </button>
+          </div>
+        ) : (
+          <div className="mb-3 flex items-center justify-between text-sm">
+            <span className="flex items-center gap-3">
+              <span className="flex items-center gap-1.5">
+                <Icon name="ruler" size={16} className="text-(--color-accent)" />
+                {preview ? formatDistance(preview.distanceM) : '–'}
+              </span>
+              <span className="flex items-center gap-1.5">
+                <Icon name="clock" size={16} className="text-(--color-accent)" />
+                {preview ? `ca. ${formatDuration(preview.durationS)}` : '–'}
+              </span>
+            </span>
+            <span className="text-(--color-text-secondary)">
+              {routing ? 'berechne…' : `${waypoints.length} Wegpunkte`}
+            </span>
+          </div>
+        )}
 
         {error && <p className="mb-2 text-sm text-(--color-danger)">{error}</p>}
 

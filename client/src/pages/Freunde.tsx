@@ -78,7 +78,7 @@ export function Freunde() {
 
   return (
     <div className="pb-24">
-      <PageHeader title="Freunde" subtitle="Verbinde dich mit anderen Fahrer:innen" />
+      <PageHeader title="Freunde" subtitle="Verbinde dich mit anderen Fahrer:innen" backTo="/" />
       <div className="flex flex-col gap-4 p-5">
         <Link
           to="/gruppen"

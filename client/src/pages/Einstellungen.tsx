@@ -8,7 +8,7 @@ import { api, ApiError } from '../lib/api';
 import { getPushState, subscribePush, unsubscribePush, type PushState } from '../lib/push';
 
 const themeOptions: { value: ThemePref; label: string }[] = [
-  { value: 'auto', label: 'Automatisch (Tageszeit)' },
+  { value: 'auto', label: 'Auto' },
   { value: 'light', label: 'Hell' },
   { value: 'dark', label: 'Dunkel' },
 ];
@@ -303,22 +303,14 @@ export function Einstellungen() {
 
         <section className="ios-card p-4">
           <h2 className="mb-2 text-base font-semibold">Darstellung</h2>
-          <div className="flex flex-col gap-2">
+          <div className="ios-segment">
             {themeOptions.map((opt) => (
-              <button
-                key={opt.value}
-                onClick={() => setPref(opt.value)}
-                className={`flex items-center justify-between rounded-xl border px-4 py-3 text-left text-sm font-medium transition ${
-                  pref === opt.value
-                    ? 'border-(--color-accent) bg-(--color-accent)/10 text-(--color-accent)'
-                    : 'border-(--color-border) bg-(--color-bg)'
-                }`}
-              >
+              <button key={opt.value} aria-pressed={pref === opt.value} onClick={() => setPref(opt.value)}>
                 {opt.label}
-                {pref === opt.value && <Icon name="check" size={18} />}
               </button>
             ))}
           </div>
+          <p className="mt-2 text-xs text-(--color-text-secondary)">Auto wechselt nach Tageszeit.</p>
         </section>
 
         <section className="ios-card p-4">
@@ -335,25 +327,16 @@ export function Einstellungen() {
               Benachrichtigungen sind im Browser blockiert. Bitte in den Website-Einstellungen erlauben.
             </p>
           ) : (
-            <button
-              onClick={onTogglePush}
-              disabled={pushBusy}
-              className={`flex w-full items-center justify-center gap-2 rounded-xl py-3 text-sm font-semibold transition active:scale-[0.98] disabled:opacity-50 ${
-                pushState === 'subscribed'
-                  ? 'border border-(--color-border) bg-(--color-bg)'
-                  : 'bg-(--color-accent) text-white'
-              }`}
-            >
-              {pushState === 'subscribed' ? (
-                <>
-                  <Icon name="check" size={18} /> Aktiviert – zum Deaktivieren tippen
-                </>
-              ) : pushBusy ? (
-                'Bitte warten…'
-              ) : (
-                'Benachrichtigungen aktivieren'
-              )}
-            </button>
+            <label className="flex items-center justify-between">
+              <span className="text-sm font-medium">Push-Benachrichtigungen</span>
+              <input
+                type="checkbox"
+                className="ios-switch"
+                checked={pushState === 'subscribed'}
+                disabled={pushBusy}
+                onChange={onTogglePush}
+              />
+            </label>
           )}
         </section>
 
@@ -363,18 +346,18 @@ export function Einstellungen() {
             Wenn aktiv, bekommen deine Freunde eine Benachrichtigung, wenn du online gehst, losfährst
             oder eine Tour beendest. Aus = du fährst anonym.
           </p>
-          <button
-            onClick={onToggleShareActivity}
-            disabled={shareBusy}
-            className={`flex w-full items-center justify-between rounded-xl border px-4 py-3 text-left text-sm font-medium transition active:scale-[0.98] disabled:opacity-50 ${
-              (user?.shareActivity ?? true)
-                ? 'border-(--color-accent) bg-(--color-accent)/10 text-(--color-accent)'
-                : 'border-(--color-border) bg-(--color-bg)'
-            }`}
-          >
-            {(user?.shareActivity ?? true) ? 'Aktivität wird geteilt' : 'Anonym – nichts wird geteilt'}
-            {(user?.shareActivity ?? true) && <Icon name="check" size={18} />}
-          </button>
+          <label className="flex items-center justify-between">
+            <span className="text-sm font-medium">
+              {(user?.shareActivity ?? true) ? 'Aktivität wird geteilt' : 'Anonym – nichts wird geteilt'}
+            </span>
+            <input
+              type="checkbox"
+              className="ios-switch"
+              checked={user?.shareActivity ?? true}
+              disabled={shareBusy}
+              onChange={onToggleShareActivity}
+            />
+          </label>
         </section>
 
         <section className="ios-card p-4">

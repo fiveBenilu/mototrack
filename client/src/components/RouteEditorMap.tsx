@@ -24,6 +24,15 @@ function ClickToAdd({ onAdd }: { onAdd: (p: [number, number]) => void }) {
   return null;
 }
 
+// Auf einen gesuchten/generierten Punkt schwenken.
+function FocusOn({ focus }: { focus: [number, number] | null }) {
+  const map = useMap();
+  useEffect(() => {
+    if (focus) map.setView(focus, Math.max(map.getZoom(), 11));
+  }, [focus, map]);
+  return null;
+}
+
 // Beim ersten Laden auf die eigene Position zentrieren.
 function CenterOnce() {
   const map = useMap();
@@ -38,6 +47,7 @@ function CenterOnce() {
 export function RouteEditorMap({
   waypoints,
   geometry,
+  focus = null,
   onAdd,
   onMove,
   onRemove,
@@ -45,6 +55,7 @@ export function RouteEditorMap({
 }: {
   waypoints: [number, number][];
   geometry: [number, number][];
+  focus?: [number, number] | null;
   onAdd: (p: [number, number]) => void;
   onMove: (index: number, p: [number, number]) => void;
   onRemove: (index: number) => void;
@@ -67,6 +78,7 @@ export function RouteEditorMap({
           maxZoom={20}
         />
         <CenterOnce />
+        <FocusOn focus={focus} />
         <ClickToAdd onAdd={onAdd} />
 
         {geometry.length > 1 && (

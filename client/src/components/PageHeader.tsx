@@ -19,7 +19,7 @@ export function PageHeader({
           <Link
             to={backTo}
             aria-label="Zurück"
-            className="-ml-1.5 flex h-8 w-8 items-center justify-center rounded-full text-(--color-text-secondary)"
+            className="-ml-1.5 flex h-8 w-8 items-center justify-center rounded-full text-(--color-accent) active:opacity-50"
           >
             <Icon name="chevron-left" size={22} />
           </Link>
@@ -28,7 +28,7 @@ export function PageHeader({
           <button
             onClick={onBack}
             aria-label="Zurück"
-            className="-ml-1.5 flex h-8 w-8 items-center justify-center rounded-full text-(--color-text-secondary)"
+            className="-ml-1.5 flex h-8 w-8 items-center justify-center rounded-full text-(--color-accent) active:opacity-50"
           >
             <Icon name="chevron-left" size={22} />
           </button>

@@ -1,13 +1,13 @@
 import { NavLink } from 'react-router-dom';
 import { useRide } from '../context/RideContext';
 
+// ponytail: max. 5 Tabs wie in nativen iOS-Apps – Statistik/Freunde sind über
+// Home-Kacheln bzw. Einstellungen erreichbar.
 const tabs = [
   { to: '/', label: 'Home', icon: HomeIcon },
   { to: '/fahren', label: 'Fahren', icon: RideIcon },
   { to: '/karte', label: 'Karte', icon: MapIcon },
   { to: '/routen', label: 'Routen', icon: RouteIcon },
-  { to: '/statistik', label: 'Statistik', icon: ChartIcon },
-  { to: '/freunde', label: 'Freunde', icon: FriendsIcon },
   { to: '/einstellungen', label: 'Mehr', icon: GearIcon },
 ];
 
@@ -83,28 +83,6 @@ function RouteIcon({ active }: IconProps) {
       <circle cx="6" cy="19" r="2.5" />
       <circle cx="18" cy="5" r="2.5" />
       <path d="M8.5 19H14a3.5 3.5 0 0 0 0-7h-4a3.5 3.5 0 0 1 0-7h5.5" />
-    </svg>
-  );
-}
-
-function ChartIcon({ active }: IconProps) {
-  return (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={active ? 2.2 : 1.8} strokeLinecap="round" strokeLinejoin="round">
-      <path d="M4 20V10" />
-      <path d="M10 20V4" />
-      <path d="M16 20v-7" />
-      <path d="M22 20V8" />
-    </svg>
-  );
-}
-
-function FriendsIcon({ active }: IconProps) {
-  return (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={active ? 2.2 : 1.8} strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="9" cy="8" r="3.2" />
-      <path d="M3.5 19a5.5 5.5 0 0 1 11 0" />
-      <path d="M16 5.2a3.2 3.2 0 0 1 0 6.1" />
-      <path d="M17.5 13.5a5.5 5.5 0 0 1 3 5" />
     </svg>
   );
 }

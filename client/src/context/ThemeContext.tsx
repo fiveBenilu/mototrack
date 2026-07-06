@@ -39,6 +39,10 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', resolved === 'dark');
+    // Statusleiste/PWA-Chrome an das Theme angleichen (sonst immer dunkel).
+    document
+      .querySelector('meta[name="theme-color"]')
+      ?.setAttribute('content', resolved === 'dark' ? '#0a0a0c' : '#f2f2f7');
   }, [resolved]);
 
   const setPref = (next: ThemePref) => {

@@ -1,3 +1,4 @@
+import { Suspense, lazy } from 'react';
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ThemeProvider } from './context/ThemeContext';
@@ -8,31 +9,47 @@ import { ConsentBanner } from './components/ConsentBanner';
 import { Login } from './pages/Login';
 import { Register } from './pages/Register';
 import { Home } from './pages/Home';
-import { Fahren } from './pages/Fahren';
-import { MapPage } from './pages/MapPage';
-import { Statistik } from './pages/Statistik';
-import { RideDetail } from './pages/RideDetail';
-import { Einstellungen } from './pages/Einstellungen';
-import { Freunde } from './pages/Freunde';
-import { FriendProfile } from './pages/FriendProfile';
-import { Groups } from './pages/Groups';
-import { Routen } from './pages/Routen';
-import { GroupDetail } from './pages/GroupDetail';
-import { PublicRide } from './pages/PublicRide';
-import { Admin } from './pages/Admin';
-import { Impressum } from './pages/legal/Impressum';
-import { Datenschutz } from './pages/legal/Datenschutz';
-import { Nutzungsbedingungen } from './pages/legal/Nutzungsbedingungen';
+
+// Alle weiteren Seiten lazy: Leaflet/Recharts landen so in eigenen Chunks und
+// blockieren den ersten Seitenaufbau nicht. Der Service Worker precacht alle
+// Chunks, offline funktioniert also weiterhin alles.
+const Fahren = lazy(() => import('./pages/Fahren').then((m) => ({ default: m.Fahren })));
+const MapPage = lazy(() => import('./pages/MapPage').then((m) => ({ default: m.MapPage })));
+const Statistik = lazy(() => import('./pages/Statistik').then((m) => ({ default: m.Statistik })));
+const RideDetail = lazy(() => import('./pages/RideDetail').then((m) => ({ default: m.RideDetail })));
+const Einstellungen = lazy(() => import('./pages/Einstellungen').then((m) => ({ default: m.Einstellungen })));
+const Freunde = lazy(() => import('./pages/Freunde').then((m) => ({ default: m.Freunde })));
+const FriendProfile = lazy(() => import('./pages/FriendProfile').then((m) => ({ default: m.FriendProfile })));
+const Groups = lazy(() => import('./pages/Groups').then((m) => ({ default: m.Groups })));
+const Routen = lazy(() => import('./pages/Routen').then((m) => ({ default: m.Routen })));
+const GroupDetail = lazy(() => import('./pages/GroupDetail').then((m) => ({ default: m.GroupDetail })));
+const PublicRide = lazy(() => import('./pages/PublicRide').then((m) => ({ default: m.PublicRide })));
+const Admin = lazy(() => import('./pages/Admin').then((m) => ({ default: m.Admin })));
+const Impressum = lazy(() => import('./pages/legal/Impressum').then((m) => ({ default: m.Impressum })));
+const Datenschutz = lazy(() => import('./pages/legal/Datenschutz').then((m) => ({ default: m.Datenschutz })));
+const Nutzungsbedingungen = lazy(() =>
+  import('./pages/legal/Nutzungsbedingungen').then((m) => ({ default: m.Nutzungsbedingungen })),
+);
+
+function Spinner() {
+  return (
+    <div className="flex min-h-screen items-center justify-center">
+      <div className="h-8 w-8 animate-spin rounded-full border-2 border-(--color-border) border-t-(--color-accent)" />
+    </div>
+  );
+}
 
 const LEGAL_PATHS = ['/impressum', '/datenschutz', '/nutzungsbedingungen'];
 
 function LegalRoutes() {
   return (
-    <Routes>
-      <Route path="/impressum" element={<Impressum />} />
-      <Route path="/datenschutz" element={<Datenschutz />} />
-      <Route path="/nutzungsbedingungen" element={<Nutzungsbedingungen />} />
-    </Routes>
+    <Suspense fallback={<Spinner />}>
+      <Routes>
+        <Route path="/impressum" element={<Impressum />} />
+        <Route path="/datenschutz" element={<Datenschutz />} />
+        <Route path="/nutzungsbedingungen" element={<Nutzungsbedingungen />} />
+      </Routes>
+    </Suspense>
   );
 }
 
@@ -44,9 +61,11 @@ function AppShell() {
   // Auth-Gate behandeln, damit auch ausgeloggte Besucher sie sehen.
   if (location.pathname.startsWith('/r/')) {
     return (
-      <Routes>
-        <Route path="/r/:token" element={<PublicRide />} />
-      </Routes>
+      <Suspense fallback={<Spinner />}>
+        <Routes>
+          <Route path="/r/:token" element={<PublicRide />} />
+        </Routes>
+      </Suspense>
     );
   }
 
@@ -56,11 +75,7 @@ function AppShell() {
   }
 
   if (loading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-(--color-border) border-t-(--color-accent)" />
-      </div>
-    );
+    return <Spinner />;
   }
 
   if (!user) {
@@ -79,7 +94,8 @@ function AppShell() {
   return (
     <>
       <div key={location.pathname} className="page-fade">
-        <Routes>
+        <Suspense fallback={<Spinner />}>
+          <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/fahren" element={<Fahren />} />
           <Route path="/karte" element={<MapPage />} />
@@ -92,8 +108,9 @@ function AppShell() {
           <Route path="/gruppen" element={<Groups />} />
           <Route path="/gruppen/:id" element={<GroupDetail />} />
           <Route path="/admin" element={user.isAdmin ? <Admin /> : <Navigate to="/" replace />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </Suspense>
       </div>
       <TabBar />
     </>

@@ -69,10 +69,93 @@ body {
   -webkit-backdrop-filter: blur(20px);
   border: 1px solid var(--color-border);
   border-radius: 18px;
+  /* Weicher iOS-Schatten – nur hell; im Dark Mode reicht die Kontur. */
+  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.03), 0 6px 20px rgba(0, 0, 0, 0.05);
+  transition: transform 0.15s ease;
+}
+.dark .ios-card {
+  box-shadow: none;
+}
+/* Antippbare Karten drücken sich sichtbar ein (Haptik-Ersatz im Web). */
+a.ios-card:active,
+button.ios-card:active {
+  transform: scale(0.98);
 }
 
 .ios-divider {
   border-color: var(--color-border);
+}
+
+/* iOS zoomt beim Fokus in Eingabefelder < 16px – deshalb Mindestgröße erzwingen. */
+input:not([type='checkbox']):not([type='radio']),
+select,
+textarea {
+  font-size: max(16px, 1em) !important;
+}
+
+/* Fokussierte Felder bekommen überall den Akzent-Rahmen. */
+input:not([type='checkbox']):not([type='radio']):focus,
+textarea:focus,
+select:focus {
+  border-color: var(--color-accent);
+}
+
+/* Nativer iOS-Schalter (UISwitch), reines CSS auf einer Checkbox. */
+input.ios-switch {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 51px;
+  height: 31px;
+  flex-shrink: 0;
+  border-radius: 31px;
+  background: rgba(120, 120, 128, 0.32);
+  position: relative;
+  cursor: pointer;
+  transition: background 0.25s;
+  margin: 0;
+}
+input.ios-switch::before {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 27px;
+  height: 27px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.15), 0 1px 1px rgba(0, 0, 0, 0.16);
+  transition: transform 0.25s;
+}
+input.ios-switch:checked {
+  background: var(--color-success);
+}
+input.ios-switch:checked::before {
+  transform: translateX(20px);
+}
+input.ios-switch:disabled {
+  opacity: 0.5;
+}
+
+/* iOS-Segmented-Control (UISegmentedControl). Aktives Segment via aria-pressed. */
+.ios-segment {
+  display: flex;
+  padding: 2px;
+  border-radius: 9px;
+  background: rgba(120, 120, 128, 0.16);
+}
+.ios-segment > button {
+  flex: 1;
+  padding: 6px 0;
+  border-radius: 7px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text);
+  transition: background 0.15s, box-shadow 0.15s;
+}
+.ios-segment > button[aria-pressed='true'] {
+  background: var(--color-bg-elevated);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+  font-weight: 600;
 }
 
 ::-webkit-scrollbar {

@@ -143,13 +143,17 @@ export interface RouteStep {
   distanceM: number;
 }
 
-// Geplante Tour: Wegpunkte + von OSRM berechneter Straßenverlauf, Dauer und
+// Routing-Profil: schnellste Strecke oder kurvige Motorrad-Route (calimoto-Stil).
+export type RouteProfile = 'fast' | 'curvy';
+
+// Geplante Tour: Wegpunkte + berechneter Straßenverlauf, Dauer und
 // Abbiege-Anweisungen.
 export interface PlannedRoute {
   id: number;
   ownerId: number;
   ownerName: string | null;
   name: string;
+  profile: RouteProfile;
   distanceM: number;
   durationS: number;
   waypoints: [number, number][];
@@ -164,6 +168,13 @@ export interface RoutePreview {
   durationS: number;
   geometry: [number, number][];
   steps: RouteStep[];
+}
+
+// Ergebnis der Ortssuche (Nominatim).
+export interface GeocodeResult {
+  name: string;
+  lat: number;
+  lng: number;
 }
 
 export interface Ride {
