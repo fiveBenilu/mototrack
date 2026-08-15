@@ -29,6 +29,23 @@ export interface FriendLocation {
   lng: number;
   speedKmh: number;
   ts: number;
+  // Live-Telemetrie (fehlt bei alten Clients → optional).
+  leanDeg?: number;
+  distanceM?: number;
+  maxSpeedKmh?: number;
+  recording?: boolean;
+}
+
+/** Live-Ereignis eines Freundes während der Fahrt (Blitzer/Zone geschafft). */
+export interface FriendEvent {
+  id: string;
+  userId: number;
+  name: string;
+  kind: 'camera' | 'zone';
+  speedKmh: number;
+  points: number;
+  stars: number;
+  ts: number;
 }
 
 export interface Friend {

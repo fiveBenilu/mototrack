@@ -50,6 +50,16 @@ interface LiveLocation {
   lng: number;
   speedKmh: number;
   ts: number;
+  // Live-Telemetrie für den Konvoi (Schräglage, gefahrene Strecke, Topspeed).
+  leanDeg: number;
+  distanceM: number;
+  maxSpeedKmh: number;
+  recording: boolean;
+}
+
+// Zahl aus einer WS-Nachricht übernehmen, sonst 0 (Client könnte älter sein).
+function num(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0;
 }
 
 const connections = new Map<number, Set<WebSocket>>();
@@ -137,8 +147,12 @@ export function setupWebSocket(server: Server) {
         const loc: LiveLocation = {
           lat: msg.lat,
           lng: msg.lng,
-          speedKmh: typeof msg.speedKmh === 'number' ? msg.speedKmh : 0,
+          speedKmh: num(msg.speedKmh),
           ts: Date.now(),
+          leanDeg: num(msg.leanDeg),
+          distanceM: num(msg.distanceM),
+          maxSpeedKmh: num(msg.maxSpeedKmh),
+          recording: msg.recording === true,
         };
         liveLocations.set(uid, loc);
         if (startedRiding) notifyFriendsThrottled(uid, lastRideNotify, friendStartedRide);
@@ -165,6 +179,21 @@ export function setupWebSocket(server: Server) {
 
 export function isUserOnline(userId: number): boolean {
   return connections.has(userId);
+}
+
+/**
+ * Live-Ereignis (Blitzer/Zone geschafft) an alle Freunde schicken, die gerade
+ * verbunden sind – der Konvoi soll sofort mitbekommen, wenn jemand abliefert.
+ * Kein Push, nur der offene Socket: das ist Live-Geplänkel, keine Nachricht.
+ * Der Name wird pro Empfänger aufgelöst (deren Spitzname für den Fahrer).
+ */
+export function broadcastEventToFriends(userId: number, event: Record<string, unknown>) {
+  if (!sharesActivity(userId)) return;
+  for (const friendId of getFriendIds(userId)) {
+    const sockets = connections.get(friendId);
+    if (!sockets) continue;
+    for (const ws of sockets) send(ws, { ...event, userId, name: resolveFriendName(friendId, userId) });
+  }
 }
 
 /** Sendet eine Nachricht an alle offenen Sockets der angegebenen Nutzer. */

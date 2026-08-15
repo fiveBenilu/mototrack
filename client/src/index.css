@@ -239,6 +239,22 @@ input.ios-switch:disabled {
   animation: cam-glow 2s ease-in-out infinite;
 }
 
+/* Zusammengefasste Blitzer beim Rauszoomen: eine Blase mit der Anzahl darin.
+   Kein Glow-Puls – sonst flackert beim Rauszoomen die halbe Karte. */
+.cam-cluster {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: rgba(255, 59, 48, 0.9);
+  border: 2px solid white;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.35);
+  color: white;
+  font-weight: 700;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
 /* Blitzer-Zonen-Tore: Ausfahrt violett (Zielflagge), Einfahrt grün (Start) –
    so ist die Fahrtrichtung der Mess-Strecke sofort erkennbar. */
 .zone-marker {

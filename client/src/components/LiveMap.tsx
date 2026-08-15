@@ -8,6 +8,7 @@ import { useRide } from '../context/RideContext';
 import { useTheme } from '../context/ThemeContext';
 import { api } from '../lib/api';
 import { haversineDistance, bearingDeg, angleDiff } from '../lib/geo';
+import { clusterPoints } from '../lib/cluster';
 import type { Friend } from '../lib/types';
 
 const CAMERA_WARN_RANGE_M = 600; // ab dieser Entfernung vor einem Blitzer warnen
@@ -102,6 +103,30 @@ const zoneExitIcon = L.divIcon({
   iconSize: [28, 28],
   iconAnchor: [14, 14],
 });
+
+// Unterhalb dieses Zooms werden Blitzer & Zonen zu Blasen zusammengefasst, statt
+// jeden Marker (und jede Zonen-Linie) einzeln zu zeichnen – sonst wird die Karte
+// beim Rauszoomen zäh.
+const CLUSTER_BELOW_ZOOM = 13;
+
+function clusterIcon(count: number) {
+  const size = count < 10 ? 34 : count < 50 ? 42 : 50;
+  return L.divIcon({
+    className: '',
+    html: `<div class="cam-cluster" style="width:${size}px;height:${size}px">${count}</div>`,
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
+  });
+}
+
+function ZoomWatcher({ onZoom }: { onZoom: (zoom: number) => void }) {
+  const map = useMapEvents({ zoomend: () => onZoom(map.getZoom()) });
+  useEffect(() => {
+    onZoom(map.getZoom());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  return null;
+}
 
 const NAV_ARROW_SVG =
   '<svg width="22" height="22" viewBox="0 0 24 24" fill="#0a84ff" stroke="white" stroke-width="1.6" stroke-linejoin="round"><path d="M12 2 L19 21 L12 16.5 L5 21 Z"/></svg>';
@@ -342,10 +367,11 @@ function speak(text: string) {
 }
 
 export function LiveMap({ className, lockView = false }: { className?: string; lockView?: boolean }) {
-  const { cameras, zones, friendLocations, myLocation, lastPass, dismissLastPass, lastZonePass, dismissLastZonePass, activeZoneProgress, activeRoute } =
+  const { cameras, zones, friendLocations, myLocation, lastPass, dismissLastPass, lastZonePass, dismissLastZonePass, activeZoneProgress, activeRoute, friendEvents } =
     useRide();
   const { resolved } = useTheme();
   const [follow, setFollow] = useState(true);
+  const [zoom, setZoom] = useState(15);
   const [mapInstance, setMapInstance] = useState<L.Map | null>(null);
   const [friends, setFriends] = useState<Map<number, Friend>>(new Map());
 
@@ -375,6 +401,30 @@ export function LiveMap({ className, lockView = false }: { className?: string; l
     const timer = setTimeout(dismissLastZonePass, 6000);
     return () => clearTimeout(timer);
   }, [lastZonePass, dismissLastZonePass]);
+
+  // Neuestes Freundes-Ereignis kurz einblenden. Der Ticker im Konvoi-Tab behält
+  // die Historie – auf der Karte reicht das, was gerade passiert ist.
+  const latestEvent = friendEvents[0] ?? null;
+  const [hiddenEventId, setHiddenEventId] = useState<string | null>(null);
+  useEffect(() => {
+    if (!latestEvent) return;
+    const t = setTimeout(() => setHiddenEventId(latestEvent.id), 6000);
+    return () => clearTimeout(t);
+  }, [latestEvent]);
+  const freshFriendEvent = latestEvent && latestEvent.id !== hiddenEventId ? latestEvent : null;
+
+  // Beim Rauszoomen: Blitzer und Zonen-Tore als gemeinsame Blasen mit Anzahl.
+  const clustered = zoom < CLUSTER_BELOW_ZOOM;
+  const clusters = useMemo(() => {
+    if (!clustered) return [];
+    return clusterPoints(
+      [
+        ...cameras.map((c) => ({ lat: c.lat, lng: c.lng })),
+        ...zones.map((z) => ({ lat: z.entryLat, lng: z.entryLng })),
+      ],
+      zoom,
+    );
+  }, [clustered, cameras, zones, zoom]);
 
   const heading = position?.heading ?? null;
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -461,6 +511,7 @@ export function LiveMap({ className, lockView = false }: { className?: string; l
           maxZoom={20}
         />
         <BoundsWatcher />
+        <ZoomWatcher onZoom={setZoom} />
         <FollowCamera position={position} follow={follow} setFollow={setFollow} />
 
         {position && (
@@ -477,35 +528,48 @@ export function LiveMap({ className, lockView = false }: { className?: string; l
           />
         )}
 
-        {/* Blitzer-Zonen: hervorgehobener Straßenabschnitt + Tore an Ein-/Ausfahrt */}
-        {zones.map((zone) => (
-          <Fragment key={`zone-${zone.id}`}>
-            {zone.path.length > 1 && (
-              <Polyline
-                positions={zone.path}
-                pathOptions={{ color: ZONE_COLOR, weight: 9, opacity: 0.45, lineCap: 'round', lineJoin: 'round' }}
-              />
-            )}
-            <Marker position={[zone.entryLat, zone.entryLng]} icon={zoneEntryIcon}>
-              <Popup>
-                <ZonePopup zoneId={zone.id} lengthM={zone.lengthM} />
-              </Popup>
-            </Marker>
-            <Marker position={[zone.exitLat, zone.exitLng]} icon={zoneExitIcon}>
-              <Popup>
-                <ZonePopup zoneId={zone.id} lengthM={zone.lengthM} />
-              </Popup>
-            </Marker>
-          </Fragment>
-        ))}
+        {/* Rausgezoomt: nur Blasen mit Anzahl. Tippen zoomt in die Gruppe hinein. */}
+        {clustered &&
+          clusters.map((c) => (
+            <Marker
+              key={`cluster-${c.lat}-${c.lng}`}
+              position={[c.lat, c.lng]}
+              icon={clusterIcon(c.count)}
+              eventHandlers={{ click: () => mapInstance?.setView([c.lat, c.lng], CLUSTER_BELOW_ZOOM) }}
+            />
+          ))}
 
-        {cameras.map((cam) => (
-          <Marker key={cam.id} position={[cam.lat, cam.lng]} icon={cameraIcon}>
-            <Popup>
-              <CameraPopup cameraId={cam.id} />
-            </Popup>
-          </Marker>
-        ))}
+        {/* Blitzer-Zonen: hervorgehobener Straßenabschnitt + Tore an Ein-/Ausfahrt */}
+        {!clustered &&
+          zones.map((zone) => (
+            <Fragment key={`zone-${zone.id}`}>
+              {zone.path.length > 1 && (
+                <Polyline
+                  positions={zone.path}
+                  pathOptions={{ color: ZONE_COLOR, weight: 9, opacity: 0.45, lineCap: 'round', lineJoin: 'round' }}
+                />
+              )}
+              <Marker position={[zone.entryLat, zone.entryLng]} icon={zoneEntryIcon}>
+                <Popup>
+                  <ZonePopup zoneId={zone.id} lengthM={zone.lengthM} />
+                </Popup>
+              </Marker>
+              <Marker position={[zone.exitLat, zone.exitLng]} icon={zoneExitIcon}>
+                <Popup>
+                  <ZonePopup zoneId={zone.id} lengthM={zone.lengthM} />
+                </Popup>
+              </Marker>
+            </Fragment>
+          ))}
+
+        {!clustered &&
+          cameras.map((cam) => (
+            <Marker key={cam.id} position={[cam.lat, cam.lng]} icon={cameraIcon}>
+              <Popup>
+                <CameraPopup cameraId={cam.id} />
+              </Popup>
+            </Marker>
+          ))}
 
         {Array.from(friendLocations.values()).map((f) => {
           const info = friends.get(f.userId);
@@ -543,6 +607,25 @@ export function LiveMap({ className, lockView = false }: { className?: string; l
         <div className="map-hud">
           <span className="text-3xl font-bold tabular-nums leading-none">{position.speedKmh.toFixed(0)}</span>
           <span className="text-xs font-medium text-(--color-text-secondary)">km/h</span>
+        </div>
+      )}
+
+      {/* Live-Ereignis eines Freundes (unten links, blendet nach 6 s aus). */}
+      {freshFriendEvent && (
+        <div
+          className="absolute bottom-4 left-3 z-[1000] flex items-center gap-2 rounded-2xl bg-(--color-bg-elevated) px-3 py-2 shadow-lg"
+          style={{ border: `1px solid ${freshFriendEvent.kind === 'zone' ? ZONE_COLOR : 'var(--color-danger)'}` }}
+        >
+          <Icon
+            name={freshFriendEvent.kind === 'zone' ? 'zap' : 'camera'}
+            size={16}
+            style={{ color: freshFriendEvent.kind === 'zone' ? ZONE_COLOR : 'var(--color-danger)' }}
+          />
+          <span className="text-sm">
+            <span className="font-semibold">{freshFriendEvent.name}</span>{' '}
+            <span className="font-mono font-semibold tabular-nums">{freshFriendEvent.speedKmh.toFixed(0)}</span> km/h
+          </span>
+          <Stars count={freshFriendEvent.stars} />
         </div>
       )}
 

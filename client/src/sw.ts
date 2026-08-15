@@ -1,11 +1,33 @@
 /// <reference lib="webworker" />
 import { precacheAndRoute, cleanupOutdatedCaches } from 'workbox-precaching';
+import { registerRoute } from 'workbox-routing';
+import { CacheFirst } from 'workbox-strategies';
+import { ExpirationPlugin } from 'workbox-expiration';
+import { CacheableResponsePlugin } from 'workbox-cacheable-response';
 
 declare const self: ServiceWorkerGlobalScope & { __WB_MANIFEST: { url: string; revision: string | null }[] };
 
 // Von vite-plugin-pwa (injectManifest) eingefügte Precache-Liste → Offline-Fähigkeit.
 cleanupOutdatedCaches();
 precacheAndRoute(self.__WB_MANIFEST);
+
+// Karten-Kacheln dauerhaft cachen: im Funkloch (Tal, Tunnel, Landstraße) bleibt
+// die Karte sonst weiß – inklusive der geführten Route. Kacheln ändern sich
+// praktisch nie, darum CacheFirst.
+// ponytail: cacht nur, was schon einmal angezeigt wurde. Wer offline fahren
+// will, zoomt die Strecke vorher einmal durch. Echtes Vorab-Herunterladen der
+// Route erst, wenn das im Alltag nicht reicht.
+registerRoute(
+  ({ url }) => url.hostname.endsWith('basemaps.cartocdn.com'),
+  new CacheFirst({
+    cacheName: 'map-tiles',
+    plugins: [
+      // Kachel-CDN antwortet opaque (no-cors) → Status 0 mit zulassen.
+      new CacheableResponsePlugin({ statuses: [0, 200] }),
+      new ExpirationPlugin({ maxEntries: 2500, maxAgeSeconds: 30 * 24 * 60 * 60, purgeOnQuotaError: true }),
+    ],
+  }),
+);
 
 // Neue Version sofort aktivieren.
 self.addEventListener('install', () => self.skipWaiting());

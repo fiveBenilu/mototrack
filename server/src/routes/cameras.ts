@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { db } from '../db';
 import { requireAuth, AuthedRequest } from '../middleware/auth';
 import { generateCamerasForTile, computePassResult, computeZonePassResult, COARSE_TILE_DEG } from '../lib/cameraGen';
+import { broadcastEventToFriends } from '../ws';
 
 export const camerasRouter = Router();
 
@@ -126,6 +127,9 @@ camerasRouter.post('/zones/:id/pass', requireAuth, (req: AuthedRequest, res) => 
     )
     .run(zone.id, req.userId, rideId ?? null, avgSpeedKmh, dur, points, stars);
 
+  // Freunde im Konvoi live mitlesen lassen.
+  broadcastEventToFriends(req.userId!, { type: 'friend-pass', kind: 'zone', speedKmh: avgSpeedKmh, points, stars, ts: Date.now() });
+
   res.status(201).json({
     pass: { id: result.lastInsertRowid, zoneId: zone.id, avgSpeedKmh, durationS: dur, points, stars },
   });
@@ -214,6 +218,8 @@ camerasRouter.post('/:id/pass', requireAuth, (req: AuthedRequest, res) => {
   const result = db
     .prepare('INSERT INTO camera_passes (camera_id, user_id, ride_id, speed_kmh, points, stars) VALUES (?, ?, ?, ?, ?, ?)')
     .run(camera.id, req.userId, rideId ?? null, speedKmh, points, stars);
+
+  broadcastEventToFriends(req.userId!, { type: 'friend-pass', kind: 'camera', speedKmh, points, stars, ts: Date.now() });
 
   res.status(201).json({
     pass: {

@@ -1,16 +1,18 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
-import { useRideRecorder } from '../hooks/useRideRecorder';
+import { useRideRecorder, type PositionUpdate } from '../hooks/useRideRecorder';
 import { useAuth } from './AuthContext';
 import { api } from '../lib/api';
 import { flushPendingRides } from '../lib/pendingRides';
+import { savePendingPass, flushPendingPasses } from '../lib/pendingPasses';
 import { haversineDistance } from '../lib/geo';
-import type { SpeedCamera, SpeedZone, FriendLocation, PlannedRoute } from '../lib/types';
+import type { SpeedCamera, SpeedZone, FriendLocation, FriendEvent, PlannedRoute } from '../lib/types';
 
 const ACTIVE_ROUTE_KEY = 'mototrack.activeRoute';
 
 const CAMERA_PASS_RADIUS_M = 75;
 const ZONE_TRIGGER_RADIUS_M = 80; // Nähe zu Ein-/Ausfahrt, um die Messung zu starten/beenden (großzügig, da GPS bei High-Speed nur ~1 Punkt/s liefert)
 const ZONE_MAX_DURATION_MS = 15 * 60 * 1000; // länger = abgebrochen (umgekehrt, abgebogen …)
+const EVENT_FEED_LIMIT = 20; // mehr braucht während der Fahrt niemand
 
 export interface CameraPassResult {
   cameraId: number;
@@ -67,6 +69,7 @@ interface RideContextValue extends ReturnType<typeof useRideRecorder> {
   lastZonePass: ZonePassResult | null;
   dismissLastZonePass: () => void;
   activeZoneProgress: ZoneProgress | null;
+  friendEvents: FriendEvent[];
   subscribeGroupEvents: (cb: (event: GroupEvent) => void) => () => void;
   activeRoute: PlannedRoute | null;
   setActiveRoute: (route: PlannedRoute | null) => void;
@@ -83,6 +86,8 @@ export function RideProvider({ children }: { children: ReactNode }) {
   const [lastPass, setLastPass] = useState<CameraPassResult | null>(null);
   const [lastZonePass, setLastZonePass] = useState<ZonePassResult | null>(null);
   const [activeZoneProgress, setActiveZoneProgress] = useState<ZoneProgress | null>(null);
+  // Live-Ticker: die letzten Aktionen der Freunde (Blitzer/Zonen), neueste zuerst.
+  const [friendEvents, setFriendEvents] = useState<FriendEvent[]>([]);
   // Aktive geführte Route (überlebt Tab-Wechsel/Reload via localStorage).
   const [activeRoute, setActiveRouteState] = useState<PlannedRoute | null>(() => {
     try {
@@ -106,7 +111,14 @@ export function RideProvider({ children }: { children: ReactNode }) {
   const statusRef = useRef<'idle' | 'recording' | 'paused' | 'finished'>('idle');
   const rideIdRef = useRef<number | null>(null);
   const groupListenersRef = useRef<Set<(event: GroupEvent) => void>>(new Set());
-  const lastLocationRef = useRef<{ lat: number; lng: number; speedKmh: number } | null>(null);
+  const lastLocationRef = useRef<{
+    lat: number;
+    lng: number;
+    speedKmh: number;
+    leanDeg?: number;
+    distanceM?: number;
+    maxSpeedKmh?: number;
+  } | null>(null);
 
   // Letzte bekannte Position an Freunde senden (sofern verbunden und keine
   // Aufzeichnung läuft – dann sendet der Recorder). Wird vom Watcher, beim
@@ -169,9 +181,21 @@ export function RideProvider({ children }: { children: ReactNode }) {
     [],
   );
 
-  const handlePosition = useCallback((pos: { lat: number; lng: number; speedKmh: number }) => {
-    if (statusRef.current === 'recording' && wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ type: 'location', lat: pos.lat, lng: pos.lng, speedKmh: pos.speedKmh }));
+  const handlePosition = useCallback((pos: PositionUpdate) => {
+    if (statusRef.current === 'recording') {
+      // Telemetrie für den Konvoi der Freunde mitsenden – auch für den Heartbeat
+      // merken, damit nach einem Reconnect nicht nur ein nackter Punkt ankommt.
+      lastLocationRef.current = {
+        lat: pos.lat,
+        lng: pos.lng,
+        speedKmh: pos.speedKmh,
+        leanDeg: pos.leanDeg,
+        distanceM: pos.distanceM,
+        maxSpeedKmh: pos.maxSpeedKmh,
+      };
+      if (wsRef.current?.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({ type: 'location', ...lastLocationRef.current, recording: true }));
+      }
     }
 
     if (statusRef.current !== 'recording') return;
@@ -181,13 +205,11 @@ export function RideProvider({ children }: { children: ReactNode }) {
       const dist = haversineDistance(pos.lat, pos.lng, camera.lat, camera.lng);
       if (dist <= CAMERA_PASS_RADIUS_M) {
         passedCameraIdsRef.current.add(camera.id);
+        const body = { speedKmh: pos.speedKmh, rideId: rideIdRef.current };
         api
-          .post<{ pass: CameraPassResult }>(`/cameras/${camera.id}/pass`, {
-            speedKmh: pos.speedKmh,
-            rideId: rideIdRef.current,
-          })
+          .post<{ pass: CameraPassResult }>(`/cameras/${camera.id}/pass`, body)
           .then((data) => setLastPass(data.pass))
-          .catch(() => {});
+          .catch(() => savePendingPass(`/cameras/${camera.id}/pass`, body));
       }
     }
 
@@ -222,14 +244,11 @@ export function RideProvider({ children }: { children: ReactNode }) {
         setActiveZoneProgress(null);
         if (durationS >= 1) {
           const avgSpeedKmh = (zone.lengthM / durationS) * 3.6;
+          const body = { avgSpeedKmh, durationS, rideId: rideIdRef.current };
           api
-            .post<{ pass: ZonePassResult }>(`/cameras/zones/${zone.id}/pass`, {
-              avgSpeedKmh,
-              durationS,
-              rideId: rideIdRef.current,
-            })
+            .post<{ pass: ZonePassResult }>(`/cameras/zones/${zone.id}/pass`, body)
             .then((data) => setLastZonePass(data.pass))
-            .catch(() => {});
+            .catch(() => savePendingPass(`/cameras/zones/${zone.id}/pass`, body));
         }
       } else if (now - active.startTs > ZONE_MAX_DURATION_MS) {
         activeZonesRef.current.delete(zone.id); // Messung abgebrochen
@@ -310,6 +329,22 @@ export function RideProvider({ children }: { children: ReactNode }) {
               next.delete(msg.userId);
               return next;
             });
+          } else if (msg.type === 'friend-pass') {
+            setFriendEvents((prev) =>
+              [
+                {
+                  id: `${msg.userId}-${msg.ts}`,
+                  userId: msg.userId,
+                  name: msg.name,
+                  kind: msg.kind,
+                  speedKmh: msg.speedKmh,
+                  points: msg.points,
+                  stars: msg.stars,
+                  ts: msg.ts,
+                } as FriendEvent,
+                ...prev,
+              ].slice(0, EVENT_FEED_LIMIT),
+            );
           } else if (typeof msg.type === 'string' && msg.type.startsWith('group')) {
             groupListenersRef.current.forEach((cb) => cb(msg as GroupEvent));
           }
@@ -362,7 +397,7 @@ export function RideProvider({ children }: { children: ReactNode }) {
           heading: heading !== null && !Number.isNaN(heading) ? heading : null,
           speedKmh,
         });
-        lastLocationRef.current = { lat: latitude, lng: longitude, speedKmh };
+        if (statusRef.current !== 'recording') lastLocationRef.current = { lat: latitude, lng: longitude, speedKmh };
         broadcastMyLocation();
       },
       () => {},
@@ -378,15 +413,24 @@ export function RideProvider({ children }: { children: ReactNode }) {
     };
   }, [user, broadcastMyLocation]);
 
-  // Zuvor fehlgeschlagene Fahrten (kein Netz / Server down beim Beenden) erneut
-  // hochladen: sobald der Nutzer angemeldet ist und immer wenn die Verbindung
-  // zurückkehrt.
+  // Zuvor fehlgeschlagene Fahrten und Blitzer-Durchfahrten (kein Netz / Server
+  // down) erneut senden: sobald der Nutzer angemeldet ist, wenn die Verbindung
+  // zurückkehrt und wenn die App wieder in den Vordergrund kommt – iOS feuert
+  // `online` nach einem Funkloch nicht zuverlässig.
   useEffect(() => {
     if (!user) return;
-    flushPendingRides();
-    const onOnline = () => flushPendingRides();
-    window.addEventListener('online', onOnline);
-    return () => window.removeEventListener('online', onOnline);
+    const flush = () => {
+      flushPendingRides();
+      flushPendingPasses();
+    };
+    flush();
+    const onVisible = () => document.visibilityState === 'visible' && flush();
+    window.addEventListener('online', flush);
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      window.removeEventListener('online', flush);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
   }, [user]);
 
   const dismissLastPass = useCallback(() => setLastPass(null), []);
@@ -415,6 +459,7 @@ export function RideProvider({ children }: { children: ReactNode }) {
     lastZonePass,
     dismissLastZonePass,
     activeZoneProgress,
+    friendEvents,
     subscribeGroupEvents,
     activeRoute,
     setActiveRoute,

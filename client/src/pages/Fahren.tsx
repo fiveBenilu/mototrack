@@ -340,6 +340,18 @@ export function Fahren() {
           </button>
         </section>
 
+        {/* Ohne diesen Hinweis endet die Fahrt gern nach 8 km: iOS friert die App
+            ein, sobald der Bildschirm gesperrt wird oder eine andere App nach
+            vorn kommt – dann liefert das GPS keine Punkte mehr. */}
+        <div className="ios-card flex items-start gap-2.5 p-4" style={{ borderColor: 'var(--color-warning)' }}>
+          <Icon name="alert" size={18} className="mt-0.5 shrink-0" style={{ color: 'var(--color-warning)' }} />
+          <p className="text-sm text-(--color-text-secondary)">
+            <span className="font-semibold text-(--color-text)">Bildschirm anlassen.</span> MotoTrack muss während der
+            Fahrt geöffnet und der Bildschirm an bleiben – gesperrt oder im Hintergrund zeichnet das iPhone nicht weiter
+            auf. Am besten in eine Halterung und Automatische Sperre auf „Nie" stellen.
+          </p>
+        </div>
+
         <button
           onClick={recorder.start}
           disabled={!permissionsGranted}

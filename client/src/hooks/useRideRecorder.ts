@@ -33,8 +33,19 @@ const GRAVITY = 9.80665; // m/s² → Umrechnung Beschleunigung in G
 const G_SMOOTHING = 0.8; // Tiefpass gegen Vibrations-Spitzen (0..1, höher = träger)
 const G_UPDATE_INTERVAL_MS = 100; // State-Updates der Live-G-Anzeige drosseln
 
+// Was bei jedem GPS-Punkt nach außen gemeldet wird. Neben der Position auch die
+// Live-Telemetrie, damit Freunde im Konvoi mehr sehen als nur einen Punkt.
+export interface PositionUpdate {
+  lat: number;
+  lng: number;
+  speedKmh: number;
+  leanDeg: number;
+  distanceM: number;
+  maxSpeedKmh: number;
+}
+
 export interface RecorderOptions {
-  onPosition?: (pos: { lat: number; lng: number; speedKmh: number }) => void;
+  onPosition?: (pos: PositionUpdate) => void;
 }
 
 export function useRideRecorder(options: RecorderOptions = {}) {
@@ -327,7 +338,14 @@ export function useRideRecorder(options: RecorderOptions = {}) {
             persistDraft();
           }
 
-          onPositionRef.current?.({ lat: latitude, lng: longitude, speedKmh });
+          onPositionRef.current?.({
+            lat: latitude,
+            lng: longitude,
+            speedKmh,
+            leanDeg: currentLeanRef.current,
+            distanceM: distanceRef.current,
+            maxSpeedKmh: maxSpeedRef.current,
+          });
         },
         () => {
           /* Fehler ignorieren, Aufzeichnung läuft ohne diesen Punkt weiter */
